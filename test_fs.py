@@ -22,14 +22,6 @@ BENCHMARK_SEMANTIC_LABELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 
 
 def init():
     os.makedirs(cfg.exp_path, exist_ok=True)
-    # if cfg.save_cluster:
-    #     os.makedirs(os.path.join(cfg.exp_path, 'cluster'), exist_ok=True)
-    #     os.makedirs(os.path.join(cfg.exp_path, 'cluster_filter'), exist_ok=True)
-    # if cfg.save_fg:
-    #     os.makedirs(os.path.join(cfg.exp_path, 'foreground'), exist_ok=True)
-    # if cfg.save_instance:
-    #     os.makedirs(os.path.join(cfg.exp_path, 'instance'), exist_ok=True)
-    #     # os.makedirs(os.path.join(cfg.exp_path, 'semantic'), exist_ok=True)
 
     global logger
     logger = create_logger()
@@ -43,13 +35,15 @@ def init():
 def load_set_support(model, dataset):
     set_support_name = cfg.type_support + str(cfg.cvfold) + '_' + str(cfg.k_shot) + 'shot_10sets.pth'
     set_support_file = os.path.join('exp', cfg.file_support, set_support_name)
-    if os.path.exists(set_support_file):
-        logger.info("Found set_support_vector.")
-        set_support_vectors = torch.load(set_support_file)
-        return set_support_vectors
+
+    # print(set_support_file)
+    # if os.path.exists(set_support_file):
+    #     logger.info("Found set_support_vector.")
+    #     set_support_vectors = torch.load(set_support_file)
+    #     return set_support_vectors
 
     os.makedirs(os.path.join('exp', cfg.file_support), exist_ok=True)
-    logger.info("Not found set_support_vector, create new")
+    logger.info(f"Generate support vectors and save to {set_support_file}")
     dataset.genSupportLoader()
     model.eval()
     net_device = next(model.parameters()).device
@@ -66,7 +60,7 @@ def load_set_support(model, dataset):
                     support_tuple = list_scenes[i]
                     support_scene_name, support_instance_id = support_tuple[0], support_tuple[1]
                     support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                        = dataset.load_single(support_scene_name, aug=False, permutate=False, val=True)
+                        = dataset.load_single(support_scene_name, aug=False, permutate=False, val=True, support=True)
 
                     # support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
                     #     = dataset.load_single_block(support_scene_name, support_instance_id, aug=False, permutate=False, val=True)
@@ -115,11 +109,9 @@ def do_test(model, dataset):
     dataloader = dataset.testLoader()
     dataset.load_scene_graph_info()
     
-    model.load_scene_graph_info(dataset.scene_graph_info_train, dataset.scene_graph_info_test)
     
     num_test_scenes = len(dataloader)
 
-    start_time = time.time()
     with torch.no_grad():
         matches = [{} for idx in range(cfg.run_num)]
         
@@ -157,8 +149,6 @@ def do_test(model, dataset):
 
                     outputs = model(support_dict, query_dict, [scene_infos], training=False, remember=remember, support_embeddings=support_embeddings)
 
-                    # semantic_scores = outputs['semantic_scores']  # (N, nClass=20) float32, cuda
-                    # semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
 
                     if outputs['proposal_scores'] is None:
                         continue
@@ -230,12 +220,7 @@ def do_test(model, dataset):
                     matches[k][test_scene_name]         = {}
                     matches[k][test_scene_name]['gt']   = gt2pred
                     matches[k][test_scene_name]['pred'] = pred2gt
-            # print('NMS and matching: ', time.time() - start_t) 
             logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
-
-        # print("END TIME", time.time() - start_time)
-        # outfile = 'corre.npy'
-        # np.save(outfile, model.corre_np)
         ##### evaluation
         if cfg.eval:
             run_dict = {}
@@ -291,7 +276,6 @@ if __name__ == '__main__':
         loaded_state_dict = strip_prefix_if_present(state['state_dict'], prefix="module.")
         align_and_update_state_dicts(model_state_dict, loaded_state_dict)
         model.load_state_dict(model_state_dict)
-        # model.load_state_dict(state['state_dict'])
 
         logger.info("=> loaded checkpoint '{}' (start_iter {})".format(checkpoint_fn, curr_iter))
     else:
@@ -300,14 +284,7 @@ if __name__ == '__main__':
 
     dataset = FSInstDataset(split_set='val')
 
-    # checkpoint_sim = cfg.resume_sim
-    # if osp.isfile(checkpoint_sim):
-    #     logger.info("=> loading checkpoint '{}'".format(checkpoint_sim))
-    #     state = torch.load(checkpoint_sim)
-    #     loaded_state_dict = strip_prefix_if_present(state['state_dict'], prefix="module.")
-    #     model_state_dict = model.state_dict()
-    #     align_and_update_state_dicts_sim(model_state_dict, loaded_state_dict)
-    #     model.load_state_dict(model_state_dict, strict=False)
+
 
     ##### evaluate
     do_test(

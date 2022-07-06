@@ -43,6 +43,10 @@ def align_and_update_state_dicts(model_state_dict, loaded_state_dict):
         key = current_keys[idx_new]
         key_old = loaded_keys[idx_old]
         if loaded_state_dict[key_old].shape != model_state_dict[key].shape:
+            # if 'unet' in key or 'input_conv' in key:
+            #     reshaped = loaded_state_dict[key_old].permute(4,0,1,2,3)
+            #     loaded_state_dict[key_old] = reshaped
+            # else:
             print('Skip loading parameter {}, required shape{}, '\
                 'loaded shape{}.'.format(key, model_state_dict[key].shape, loaded_state_dict[key_old].shape))
             loaded_state_dict[key_old] = model_state_dict[key]

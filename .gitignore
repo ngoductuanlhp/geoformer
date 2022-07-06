@@ -63,11 +63,12 @@ dist/
 
 *.npy
 *.zip
-data/scannetv2/train
-data/scannetv2/val
-data/scannetv2/test
+data/scannetv2/scenes
+data/scannetv2/geo
+data/scannetv2/scenes/
+data/scannetv2/geo/
 data/scannetv2/val_gt
-
+data/scannetv2/val_gt/
 lib/spconv
 
 exp/

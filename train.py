@@ -39,7 +39,8 @@ def train_one_epoch(
         train_loader, 
         model, 
         criterion,
-        optimizer
+        optimizer,
+        scaler
     ):
 
     iter_time = utils.AverageMeter()
@@ -71,17 +72,21 @@ def train_one_epoch(
             if torch.is_tensor(batch_input[key]):
                 batch_input[key] = batch_input[key].to(net_device)
 
-        outputs = model(batch_input, epoch)
+        with torch.cuda.amp.autocast(enabled=False):
+            outputs = model(batch_input, epoch)
 
-        if epoch > cfg.prepare_epochs and outputs['mask_predictions'] is None:
-            continue
+            if epoch > cfg.prepare_epochs and outputs['mask_predictions'] is None:
+                continue
 
-        loss, loss_dict = criterion(outputs, batch_input, epoch)
+            loss, loss_dict = criterion(outputs, batch_input, epoch)
 
         ##### backward
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        # loss.backward()
+        # optimizer.step()
 
         ##### time and print
 
@@ -100,16 +105,15 @@ def train_one_epoch(
 
         if iteration % 10 == 0:
             if epoch <= cfg.prepare_epochs:
-                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sem loss: {:.4f}({:.4f}) | Off loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sem loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
                     (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, am_dict['loss'].val, am_dict['loss'].avg,\
-                    am_dict['sem_loss'].val, am_dict['sem_loss'].avg, am_dict['offset_norm_loss'].val, am_dict['offset_norm_loss'].avg,\
+                    am_dict['sem_loss'].val, am_dict['sem_loss'].avg,\
                     mem_mb, 
                     iter_time.val, remain_time=remain_time))
             else:
-                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sem loss: {:.4f}({:.4f}) | Off loss: {:.4f}({:.4f}) | Cls loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sem loss: {:.4f}({:.4f}) | Cls loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
                     (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, am_dict['loss'].val, am_dict['loss'].avg,\
-                    am_dict['sem_loss'].val, am_dict['sem_loss'].avg,\
-                    am_dict['offset_norm_loss'].val + am_dict['offset_dir_loss'].val, am_dict['offset_norm_loss'].avg + am_dict['offset_dir_loss'].avg,\
+                    am_dict['sem_loss'].val, am_dict['sem_loss'].avg,
                     am_dict['cls_loss'].val, am_dict['cls_loss'].avg,\
                     am_dict['dice_loss'].val, am_dict['dice_loss'].avg, am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
                     mem_mb, 
@@ -159,13 +163,14 @@ def main():
     #     )
     
     criterion = InstSetCriterion()
-    criterion = criterion.cuda(0)
+    criterion = criterion.cuda()
 
     if cfg.optim == 'Adam':
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr)
     elif cfg.optim == 'SGD':
         optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay)
 
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
 
     start_epoch = -1
     if cfg.pretrain:
@@ -197,7 +202,7 @@ def main():
     train_loader = dataset.trainLoader()
 
     # if is_primary():
-    logger.info(str(('Training classes: ', dataset.TRAINING_SEMANTIC_LABELS)))
+    logger.info(f'Training classes: {dataset.TRAINING_SEMANTIC_LABELS}')
     logger.info('Training samples: {}'.format(len(dataset.file_names)))
 
     if start_epoch == -1:
@@ -209,7 +214,8 @@ def main():
             train_loader, 
             model, 
             criterion,
-            optimizer
+            optimizer,
+            scaler
         )
 
 if __name__ == '__main__':

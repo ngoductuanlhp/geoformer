@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+# import spconv.pytorch as spconv
 import spconv as spconv
 from spconv.modules import SparseModule
 import functools
@@ -57,7 +58,7 @@ class GeoFormer(nn.Module):
         self.input_conv = spconv.SparseSequential(
             spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )
-        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, block_reps, block, use_backbone_transformer=cfg.use_backbone_transformer, indice_key_id=1)
+        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, block_reps, block, use_backbone_transformer=True, indice_key_id=1)
         self.output_layer = spconv.SparseSequential(
             norm_fn(m),
             nn.ReLU()
@@ -75,12 +76,12 @@ class GeoFormer(nn.Module):
         )
         self.semantic_linear = nn.Linear(m, classes, bias=True)
 
-        self.offset = nn.Sequential(
-            nn.Linear(m, m, bias=True),
-            norm_fn(m),
-            nn.ReLU()
-        )
-        self.offset_linear = nn.Linear(m, 3, bias=True)
+        # self.offset = nn.Sequential(
+        #     nn.Linear(m, m, bias=True),
+        #     norm_fn(m),
+        #     nn.ReLU()
+        # )
+        # self.offset_linear = nn.Linear(m, 3, bias=True)
 
         ################################
         ################################
@@ -200,7 +201,7 @@ class GeoFormer(nn.Module):
         #### fix parameter
         self.module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
                       'semantic': self.semantic, 'semantic_linear': self.semantic_linear,
-                      'offset': self.offset, 'offset_linear': self.offset_linear,
+                    #   'offset': self.offset, 'offset_linear': self.offset_linear,
                       'mask_tower': self.mask_tower}
 
         for m in self.fix_module:
@@ -487,10 +488,11 @@ class GeoFormer(nn.Module):
         semantic_preds  = semantic_scores.max(1)[1]    # (N), long
 
         ''' Offset head'''
-        pt_offsets_feats = self.offset(output_feats)
-        pt_offsets = self.offset_linear(pt_offsets_feats)   # (N, 3), float32
+        # pt_offsets_feats = self.offset(output_feats)
+        # pt_offsets = self.offset_linear(pt_offsets_feats)   # (N, 3), float32
 
-        outputs['pt_offsets'] = pt_offsets
+        # outputs['pt_offsets'] = pt_offsets
+
         outputs['semantic_scores'] = semantic_scores
 
         if epoch <= self.prepare_epochs:

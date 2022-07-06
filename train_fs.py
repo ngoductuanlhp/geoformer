@@ -185,13 +185,11 @@ if __name__ == '__main__':
         else:
             raise ValueError("=> no checkpoint found at '{}'".format(checkpoint_fn))
 
-    # model.create_support_set_aggregator()
 
     dataset = FSInstDataset(split_set='train')
     dataset.load_scene_graph_info()
     train_loader = dataset.trainLoader()
 
-    model.load_scene_graph_info(dataset.scene_graph_info_train, dataset.scene_graph_info_test)
 
     if start_epoch == -1:
         start_epoch = 1

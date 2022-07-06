@@ -181,7 +181,7 @@ class TransformerEncoder(nn.Module):
             batch_features = features[start_id:end_id].view(-1, self.d_model) ### n' * c
 
 
-            pairwise_dist = self.pe(batch_xyz) ### n' * n' * 3
+            pairwise_dist = self.pe(batch_xyz).float() ### n' * n' * 3
             pairwise_dist = pairwise_dist.mean(dim=1)
             position_embedding = self.position_linear(pairwise_dist)
 

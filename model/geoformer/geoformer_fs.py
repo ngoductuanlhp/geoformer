@@ -23,7 +23,6 @@ from model.pos_embedding import PositionEmbeddingCoordsSine
 from util.config import cfg
 import time
 
-from model.matcher import HungarianMatcher
 
 from model.helper import (ACTIVATION_DICT, NORM_DICT, WEIGHT_INIT_DICT,
                             get_clones, GenericMLP, BatchNormDim1Swap)
@@ -229,10 +228,6 @@ class GeoFormerFS(nn.Module):
             m.weight.data.fill_(1.0)
             m.bias.data.fill_(0.0)
 
-    def load_scene_graph_info(self, scene_graph_info_train, scene_graph_info_test):
-        self.scene_graph_info_train = scene_graph_info_train
-        self.scene_graph_info_test = scene_graph_info_test
-
     def generate_proposal(self, geo_dist_arr, mask_logits, similarity_score_filter, fg_idxs, batch_offsets, threshold=0.5, min_pts_num=50):
         # batch = mask_logits.shape[0]
         batch = len(mask_logits)
@@ -247,7 +242,6 @@ class GeoFormerFS(nn.Module):
 
 
         for b in range(batch):
-            # print("DEBUG", mask_logits[b].shape)
             start   = batch_offsets[b]
             end     = batch_offsets[b+1]
             mask_logit_b = mask_logits[b].sigmoid()
@@ -260,13 +254,9 @@ class GeoFormerFS(nn.Module):
                 # ANCHOR fewshot
                 if proposal_id_n.size(0) < min_pts_num:
                     continue
-                
-
-                
+                    
                 score = mask_logit_b[n][proposal_id_n].mean() * torch.pow(similarity_score_filter[b,n], 0.24)
                 proposal_id_n = proposal_id_n + start
-                # seg_mod = torch.mode(seg_pred[proposal_id_n.long()])[0].item()
-                # seg_label = inst_pred_seg_label[n]
                 
                 proposal_id_n = fg_idxs[proposal_id_n.long()].unsqueeze(dim=1)
                 # id_proposal_id_n = torch.cat([proposal_id_n, torch.ones_like(proposal_id_n)*b], dim=1)
@@ -295,7 +285,6 @@ class GeoFormerFS(nn.Module):
         sampling_indices = [torch.tensor(np.random.choice(batch_points[i].item(), npoint, replace=(npoint>batch_points[i])), dtype=torch.int).cuda() + batch_offsets[i]
                              for i in range(batch_size)]
         sampling_indices = torch.cat(sampling_indices)
-        # print('sampling_indices', torch.max(sampling_indices), torch.min(sampling_indices))
         return sampling_indices
 
     def random_point_sample_b(self, batch_points, npoint):
@@ -303,7 +292,7 @@ class GeoFormerFS(nn.Module):
         sampling_indices = torch.tensor(np.random.choice(batch_points, npoint, replace=False), dtype=torch.int).cuda()
         return sampling_indices
 
-    def sample_query_embedding_fix(self, xyz, pc_dims, query_sampling_inds):
+    def sample_query_embedding(self, xyz, pc_dims, query_sampling_inds):
 
         query_locs = [torch.gather(xyz[..., x], 1, query_sampling_inds) for x in range(3)]
         query_locs = torch.stack(query_locs)
@@ -313,17 +302,6 @@ class GeoFormerFS(nn.Module):
         query_embedding_pos = self.query_projection(query_embedding_pos.float())
         return query_locs, query_embedding_pos, query_sampling_inds
 
-    def sample_query_embedding(self, xyz, pc_dims, num_queries):
-        fps_sampling_inds = furthest_point_sample(xyz, num_queries)
-        fps_sampling_inds = fps_sampling_inds.long()
-        query_xyz = [torch.gather(xyz[..., x], 1, fps_sampling_inds) for x in range(3)]
-        query_xyz = torch.stack(query_xyz)
-        query_xyz = query_xyz.permute(1, 2, 0)
-
-        pos_embed = self.pos_embedding(query_xyz, input_range=pc_dims)
-        query_embed = self.query_projection(pos_embed.float())
-        return query_xyz, query_embed, fps_sampling_inds
-        # return query_xyz, fps_sampling_inds
 
     def parse_dynamic_params(self, params, out_channels):
         assert params.dim()==2
@@ -348,36 +326,13 @@ class GeoFormerFS(nn.Module):
         return weight_splits, bias_splits
 
 
-    def mask_heads_forward(self, mask_features, weights, biases, num_insts, coords_, fps_sampling_coords, use_coords=True):
+    def mask_heads_forward(self, geo_dist, mask_features, weights, biases, num_insts, coords_, fps_sampling_coords, use_coords=True):
         assert mask_features.dim() == 3
         n_layers = len(weights)
         c = mask_features.size(1)
         n_mask = mask_features.size(0)
         x = mask_features.permute(2,1,0).repeat(num_insts, 1, 1) ### num_inst * c * N_mask
 
-        relative_coords = fps_sampling_coords.reshape(-1, 1, 3) - coords_.reshape(1, -1, 3) ### N_inst * N_mask * 3
-        relative_coords = relative_coords.permute(0,2,1) ### num_inst * 3 * n_mask
-        # coords_ = coords_.reshape(1, -1, 3).repeat(num_insts, 1, 1).permute(0,2,1)
-        if use_coords:
-            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
-
-        x = x.reshape(1, -1, n_mask) ### 1 * (num_inst*c') * Nmask
-        for i, (w, b) in enumerate(zip(weights, biases)):
-            x = F.conv1d(x, w, bias=b, stride=1, padding=0, groups=num_insts)
-            if i < n_layers - 1:
-                x = F.relu(x)
-
-        return x
-
-
-    def mask_heads_forward_fix(self, geo_dist, mask_features, weights, biases, num_insts, coords_, fps_sampling_coords, use_coords=True):
-        assert mask_features.dim() == 3
-        n_layers = len(weights)
-        c = mask_features.size(1)
-        n_mask = mask_features.size(0)
-        x = mask_features.permute(2,1,0).repeat(num_insts, 1, 1) ### num_inst * c * N_mask
-
-        # FIXME geodesic distance
         geo_dist = geo_dist.cuda()
 
         relative_coords = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
@@ -415,8 +370,6 @@ class GeoFormerFS(nn.Module):
 
             param_kernel = param_kernels[l] # n_queries x batch x channel
             # mlp head outputs are (num_layers x batch) x noutput x nqueries, so transpose last two dims
-            # cls_logits = self.detr_sem_head(param_kernel.permute(1,2,0)).transpose(1, 2) # batch x n_queries x n_classes
-            # with torch.no_grad():
             param_kernel2 = param_kernel.transpose(0,1).flatten(0,1) # (batch * n_queries) * channel
             before_embedding_feature    = self.before_embedding_tower(torch.unsqueeze(param_kernel2, dim=2))
             controllers                  = self.controller(before_embedding_feature).squeeze(dim=2)
@@ -441,10 +394,7 @@ class GeoFormerFS(nn.Module):
 
                 geo_dist = geo_dist_arr[b]
 
-                # mask_logits         = self.mask_heads_forward(mask_feature_b, weights, biases, n_queries, locs_float_b, 
-                #                                             fps_sampling_locs_b, use_coords=self.use_coords)
-
-                mask_logits         = self.mask_heads_forward_fix(geo_dist, mask_feature_b, weights, biases, n_queries, locs_float_b, 
+                mask_logits         = self.mask_heads_forward(geo_dist, mask_feature_b, weights, biases, n_queries, locs_float_b, 
                                                             fps_sampling_locs_b, use_coords=self.use_coords)
                 
                 mask_logits     = mask_logits.squeeze(dim=0) # (n_queries) x N_mask
@@ -602,15 +552,7 @@ class GeoFormerFS(nn.Module):
                 query_sampling_inds_arr = []
                 pre_enc_inds_arr = []
                 for b in range(batch_size):
-                    start = batch_offsets_[b]
-                    end = batch_offsets_[b+1]
-                    s_info = scene_infos[b]['query_scene']
-
-                    if training:
-                        assert s_info in self.scene_graph_info_train.keys()
-                        s_dict = self.scene_graph_info_train[s_info]
-                    else:
-                        s_dict = self.scene_graph_info_test[s_info]
+                    s_dict = scene_dict['scene_graph_info'][b]
 
                     
                     query_sampling_inds = torch.from_numpy(s_dict['query_sampling_inds']).cuda()
@@ -634,17 +576,6 @@ class GeoFormerFS(nn.Module):
                         outputs['proposal_scores']  = None
                         return outputs
 
-                    # if batch_points <= cfg.n_downsampling:
-                    #     npoint = batch_points  
-                    # else:
-                    #     npoint = cfg.n_downsampling
-
-                    # sampling_indices        = self.random_point_sample_b(batch_points, npoint).long()
-                    
-
-                    # locs_float_b = locs_float_b[sampling_indices].unsqueeze(0)
-                    # output_feats_b = output_feats_b[sampling_indices].unsqueeze(0)
-
                     locs_float_b = locs_float_b.unsqueeze(0)
                     output_feats_b = output_feats_b.unsqueeze(0)
 
@@ -667,9 +598,7 @@ class GeoFormerFS(nn.Module):
 
         geo_dist_arr = scene_dict['geo_dists']
 
-        query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding_fix(context_locs, pc_dims, query_sampling_inds_arr)
-
-        # query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding(context_locs, pc_dims, cfg.n_query_points)
+        query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding(context_locs, pc_dims, query_sampling_inds_arr)
         
         ''' channel-wise correlate '''
         channel_wise_tensor = context_feats * support_embeddings.unsqueeze(1).repeat(1,cfg.n_decode_point,1)
@@ -807,12 +736,7 @@ class GeoFormerFS(nn.Module):
         semantic_preds  = semantic_scores.max(1)[1]    # (N), long
 
         outputs['semantic_scores'] = semantic_scores
-        # print('semantic_scores', torch.mean(semantic_scores))
 
-        # if cfg.train_fold == cfg.cvfold:
-        #     fg_condition = semantic_preds >= 4
-        # else:
-        #     fg_condition = semantic_preds == 3
         if fold == 0:
             fg_condition = semantic_preds >= 4
         else:
@@ -845,11 +769,6 @@ class GeoFormerFS(nn.Module):
                 outputs['proposal_scores']  = None
                 return outputs
 
-
-            # FIXME No random
-            # sampling_indices        = self.random_point_sample_b(batch_points, npoint).long()
-            # locs_float_b = locs_float_b[sampling_indices].unsqueeze(0)
-            # output_feats_b = output_feats_b[sampling_indices].unsqueeze(0)
 
             locs_float_b = locs_float_b.unsqueeze(0)
             output_feats_b = output_feats_b.unsqueeze(0)

@@ -44,8 +44,8 @@ class InstDataset(TorchDataset):
         with open(split_filenames, "r") as f:
             self.scan_names = f.read().splitlines()
 
-        all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, 'scenes'))
-        self.file_names = [os.path.join(self.data_root, self.dataset, 'scenes',f) for f in all_file_names if f.split('.')[0] in self.scan_names]
+        all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, split_set))
+        self.file_names = [os.path.join(self.data_root, self.dataset, split_set, f) for f in all_file_names if f.split('.')[0][:12] in self.scan_names]
         self.file_names = sorted(self.file_names)
         # self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*' + self.filename_suffix)))
 
@@ -295,15 +295,12 @@ class InstDataset(TorchDataset):
         for i, ind in enumerate(inds):
             file_path = self.file_names[ind]
 
-            data = np.load(file_path)
-            random_idx = np.random.permutation(data.shape[0])
-            data = data[random_idx]
-            xyz_origin = data[:, 0:3]
-            rgb = data[:, 3:6]
-            label = data[:,6].astype(np.int)
-            instance_label = data[:,7].astype(np.int)
-
-            # print("DEBUG" , np.unique(instance_label), np.unique(label))
+            xyz_origin, rgb, label, instance_label  = torch.load(file_path)
+            random_idx = np.random.permutation(xyz_origin.shape[0])
+            xyz_origin = xyz_origin[random_idx]
+            rgb = rgb[random_idx]
+            label = label[random_idx].astype(np.int)
+            instance_label = instance_label[random_idx].astype(np.int)
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
@@ -407,10 +404,7 @@ class InstDataset(TorchDataset):
         for i, ind in enumerate(inds):
             file_path = self.file_names[ind]
 
-            data = np.load(file_path)
-            # data = self.data_files[scene_name]
-            xyz_origin = data[:, 0:3]
-            rgb = data[:, 3:6]
+            xyz_origin, rgb  = torch.load(file_path)
 
             ### flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, False, False, False)

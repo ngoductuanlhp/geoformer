@@ -39,13 +39,15 @@ class FSInstDataset:
         self.scale = cfg.scale
         self.max_npoint = cfg.max_npoint
         self.mode = cfg.mode
+
+        self.split_set = split_set
         
         split_filenames = os.path.join(self.data_root, self.dataset, f"scannetv2_{split_set}.txt")
         with open(split_filenames, "r") as f:
             self.scan_names = f.read().splitlines()
 
         all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, 'scenes'))
-        self.file_names = [os.path.join(self.data_root, self.dataset, 'scenes',f) for f in all_file_names if f.split('.')[0] in self.scan_names]
+        self.file_names = [os.path.join(self.data_root, self.dataset, 'scenes', f) for f in all_file_names if f.split('.')[0] in self.scan_names]
         self.file_names = sorted(self.file_names)
         # self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*' + self.filename_suffix)))
 
@@ -71,21 +73,21 @@ class FSInstDataset:
 
     def load_scene_graph_info(self):
 
-        load_path = os.path.join(self.data_root, self.dataset, 'scene_graph_info_train.pkl')
+        load_path = os.path.join(self.data_root, self.dataset, 'geo', 'scene_graph_info_train.pkl')
         with open(load_path, 'rb') as handle:
             self.scene_graph_info_train = pickle.load(handle)
-        print('Load train info, total scenes:', len(self.scene_graph_info_train.keys()))
+        # print('Load train info, total scenes:', len(self.scene_graph_info_train.keys()))
 
-        load_path = os.path.join(self.data_root, self.dataset, 'scene_graph_info_test.pkl')
+        load_path = os.path.join(self.data_root, self.dataset, 'geo', 'scene_graph_info_test.pkl')
         with open(load_path, 'rb') as handle:
             self.scene_graph_info_test = pickle.load(handle)
-        print('Load test info, total scenes:', len(self.scene_graph_info_test.keys()))
+        # print('Load test info, total scenes:', len(self.scene_graph_info_test.keys()))
 
-        self.geodist_train_files = os.listdir(os.path.join(self.data_root, self.dataset, 'geo_dist_train'))
-        print('Total geodist train files:', len(self.geodist_train_files))
+        # self.geodist_train_files = os.listdir(os.path.join(self.data_root, self.dataset, 'geo_dist_train'))
+        # print('Total geodist train files:', len(self.geodist_train_files))
 
-        self.geodist_test_files = os.listdir(os.path.join(self.data_root, self.dataset, 'geo_dist_test'))
-        print('Total geodist test files:', len(self.geodist_test_files))
+        # self.geodist_test_files = os.listdir(os.path.join(self.data_root, self.dataset, 'geo_dist_test'))
+        # print('Total geodist test files:', len(self.geodist_test_files))
     
     def __len__(self):
         return len(self.file_names)
@@ -130,7 +132,7 @@ class FSInstDataset:
 
     def testLoader(self):
 
-        self.test_names = [os.path.basename(i).split('.')[0] for i in self.file_names]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
         self.test_combs = self.get_test_comb()
         test_set = list(np.arange(len(self.test_names)))
         dataloader = DataLoader(test_set, batch_size=1, collate_fn=self.testMergeFS, num_workers=1,
@@ -170,6 +172,8 @@ class FSInstDataset:
 
             with open(test_combs_file, 'wb') as f:
                 pickle.dump(test_combs, f, pickle.HIGHEST_PROTOCOL)
+
+        print('len test combs:', len(list(test_combs.keys())))
         return test_combs
     
     def genSupportLoader(self):
@@ -181,9 +185,11 @@ class FSInstDataset:
 
         support_set_file = os.path.join(self.data_root, self.dataset, 'support_sets', cfg.type_support + str(cfg.cvfold) + '_' + str(k_shot) + 'shot_10sets.pkl')
         if os.path.exists(support_set_file):
+            print(f'Load support sets: {support_set_file}')
             with open(support_set_file, 'rb') as f:
                 support_sets = pickle.load(f)
         else:
+            print('Generate new support sets')
             support_sets = []
             for subset in range(0, cfg.run_num):
                 random.seed(10 * subset)
@@ -356,15 +362,17 @@ class FSInstDataset:
 
     def load_single(self, scene_name, aug=True, permutate=True, val=False, support=False):
         data = np.load(os.path.join(self.data_root, self.dataset, 'scenes', '%s.npy' %scene_name))
-
+        # if support:
+        #     file_path = os.path.join(self.data_root, self.dataset, 'scenes', '%s.npy' %scene_name)
+        # xyz_origin, rgb, label, instance_label  = torch.load(file_path)
         if permutate:
             random_idx = np.random.permutation(data.shape[0])
             data = data[random_idx]
 
-        xyz_origin = data[:, 0:3]
+        xyz_origin = data[:, :3]
         rgb = data[:, 3:6]
-        label = data[:,6].astype(np.int)
-        instance_label = data[:,7].astype(np.int)
+        label = data[:, 6].astype(np.int)
+        instance_label = data[:, 7].astype(np.int)
 
         ### jitter / flip x / rotation
         if aug:
@@ -427,6 +435,19 @@ class FSInstDataset:
         xyz -= xyz.min(0)
         return xyz_middle, xyz, rgb, label, instance_label
 
+    def process_geo_dist(self, scene_graph_info, geo_dist_pkl, scale=10.0):
+        geo_dist = []
+        max_len = scene_graph_info['locs_float_'].shape[0]
+        for i, k in enumerate(geo_dist_pkl.keys()):
+            geo = np.ones((max_len)) * scale
+            geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
+            geo_dist.append(geo)
+        geo_dist = np.stack(geo_dist, axis=0) # 128, N
+        geo_dist[geo_dist >= scale/2] = scale
+        geo_dist = geo_dist / scale
+
+        return geo_dist
+
 
     def trainMergeFS(self, ids):
         support_locs = []
@@ -450,7 +471,7 @@ class FSInstDataset:
         query_pc_maxs = []
         scene_infos = []
         geo_dists = []
-        
+        scene_graph_info_arr = []
 
         total_inst_num = 0
         for idx, id in enumerate(ids):
@@ -463,8 +484,7 @@ class FSInstDataset:
                 if query_scene_name+'.npy' in self.geodist_train_files:
                     break
 
-            with open(os.path.join(self.data_root, self.dataset, 'geo_dist_train', '%s.npy' % query_scene_name), 'rb') as handle:
-                geo_dist_pkl = pickle.load(handle)
+            
 
             query_xyz_middle, query_xyz_scaled, \
             query_rgb, query_label, query_instance_label = self.load_single(query_scene_name, aug=False, permutate=False, val=True)
@@ -472,18 +492,24 @@ class FSInstDataset:
             query_instance_label[(query_label==0).nonzero()] = -100
 
             
+            with open(os.path.join(self.data_root, self.dataset, 'geo', 'geo_dist_train', '%s.npy' % query_scene_name), 'rb') as handle:
+                geo_dist_pkl = pickle.load(handle)
 
-            geo_dist = []
+            scene_graph_info = self.scene_graph_info_train[query_scene_name]
 
-            scene_info = self.scene_graph_info_train[query_scene_name]
-            max_len = scene_info['locs_float_'].shape[0]
-            for i, k in enumerate(geo_dist_pkl.keys()):
-                geo = np.ones((max_len)) * 10
-                geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
-                geo_dist.append(geo)
-            geo_dist = np.stack(geo_dist, axis=0) # 128, N
-            geo_dist[geo_dist >= 5] = 10
-            geo_dist = geo_dist / 10.0
+            # geo_dist = []
+            # max_len = scene_graph_info['locs_float_'].shape[0]
+            # for i, k in enumerate(geo_dist_pkl.keys()):
+            #     geo = np.ones((max_len))
+            #     geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
+            #     geo_dist.append(geo)
+            # geo_dist = np.stack(geo_dist, axis=0) # 128, N
+            # geo_dist[geo_dist >= 5] = 10
+            # geo_dist = geo_dist / 10.0
+
+            geo_dist = self.process_geo_dist(scene_graph_info, geo_dist_pkl)
+
+            scene_graph_info_arr.append(scene_graph_info)
 
 
             query_instance_label = self.getCroppedInstLabel(query_instance_label, valid_idxs=None)
@@ -582,7 +608,8 @@ class FSInstDataset:
                     'instance_pointnum': query_instance_pointnum,
                     'spatial_shape': query_spatial_shape, 'batch_offsets': query_batch_offsets,
                     'pc_mins': query_pc_mins, 'pc_maxs': query_pc_maxs,
-                    'geo_dists': geo_dists
+                    'geo_dists': geo_dists,
+                    'scene_graph_info': scene_graph_info_arr
                     }
 
         return support_dict, query_dict, scene_infos
@@ -604,19 +631,22 @@ class FSInstDataset:
             = self.load_single(query_scene_name, aug=False, permutate=False,val=True)
 
 
-        with open(os.path.join(self.data_root, self.dataset, 'geo_dist_test', '%s.npy' %query_scene_name), 'rb') as handle:
+        with open(os.path.join(self.data_root, self.dataset, 'geo', 'geo_dist_test', '%s.npy' %query_scene_name), 'rb') as handle:
             geo_dist_pkl = pickle.load(handle)
+        scene_graph_info = self.scene_graph_info_test[query_scene_name]
 
-        geo_dist = []
-        scene_info = self.scene_graph_info_test[query_scene_name]
-        max_len = scene_info['locs_float_'].shape[0]
-        for i, k in enumerate(geo_dist_pkl.keys()):
-            geo = np.ones((max_len)) * 10
-            geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
-            geo_dist.append(geo)
-        geo_dist = np.stack(geo_dist, axis=0) # 128, N
-        geo_dist[geo_dist >= 5] = 10
-        geo_dist = geo_dist / 10.0
+            # geo_dist = []
+            # max_len = scene_graph_info['locs_float_'].shape[0]
+
+            # for i, k in enumerate(geo_dist_pkl.keys()):
+            #     geo = np.ones((max_len)) * 10
+            #     geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
+            #     geo_dist.append(geo)
+            # geo_dist = np.stack(geo_dist, axis=0) # 128, N
+            # geo_dist[geo_dist >= 5] = 10
+            # geo_dist = geo_dist / 10.0
+
+        geo_dist = self.process_geo_dist(scene_graph_info, geo_dist_pkl)
         geo_dists = [torch.from_numpy(geo_dist).float()]
 
         query_locs = torch.cat([torch.LongTensor(query_xyz_scaled.shape[0], 1).fill_(0), torch.from_numpy(query_xyz_scaled).long()], 1)
@@ -626,20 +656,22 @@ class FSInstDataset:
 
         query_label = torch.from_numpy(query_label)
         # query_instance_label = torch.from_numpy(query_instance_label)
-        query_spatial_shape = np.array([1024, 1024, 1024])
-        # query_spatial_shape = np.clip((query_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale[0], None)
+
+        query_spatial_shape = np.clip((query_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale[0], None)
 
         query_voxel_locs, query_p2v_map, query_v2p_map = pointgroup_ops.voxelization_idx(query_locs, self.batch_size, self.mode)
         
         query_pc_min = torch.from_numpy(query_xyz_middle.min(axis=0)).unsqueeze(0)
         query_pc_max = torch.from_numpy(query_xyz_middle.max(axis=0)).unsqueeze(0)
 
+
         query_dict = {'voxel_locs': query_voxel_locs, 'p2v_map': query_p2v_map, 'v2p_map': query_v2p_map,
                     'locs': query_locs, 'locs_float': query_locs_float, 'feats': query_feats, 
                     'spatial_shape': query_spatial_shape, 'batch_offsets': query_batch_offsets,
                     'pc_mins': query_pc_min, 'pc_maxs': query_pc_max, 
                     'labels': query_label,
-                    'geo_dists': geo_dists}
+                    'geo_dists': geo_dists,
+                    'scene_graph_info': [scene_graph_info]}
 
         if cfg.fix_support:
             list_support_dicts = [None] * len(test_comb['active_label'])

@@ -196,9 +196,9 @@ class InstSetCriterion(nn.Module):
         instance_labels = batch_inputs['instance_labels']
 
         '''offset loss'''
-        pt_offsets = model_outputs['pt_offsets']
-        instance_info = batch_inputs['instance_infos']
-        coords = batch_inputs['locs_float']
+        # # pt_offsets = model_outputs['pt_offsets']
+        # instance_info = batch_inputs['instance_infos']
+        # coords = batch_inputs['locs_float']
         
 
         loss_dict_out = {}
@@ -206,27 +206,27 @@ class InstSetCriterion(nn.Module):
 
         semantic_loss = self.semantic_criterion(semantic_scores, semantic_labels)
         
-        gt_offsets = instance_info[:, 0:3] - coords   # (N, 3)
-        pt_diff = pt_offsets - gt_offsets   # (N, 3)
-        pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)   # (N)
-        valid = (instance_labels != cfg.ignore_label).float()
-        offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+        # gt_offsets = instance_info[:, 0:3] - coords   # (N, 3)
+        # pt_diff = pt_offsets - gt_offsets   # (N, 3)
+        # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)   # (N)
+        # valid = (instance_labels != cfg.ignore_label).float()
+        # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
 
-        gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)   # (N), float
-        gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
-        pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
-        pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
-        direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)   # (N)
-        offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
+        # gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)   # (N), float
+        # gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
+        # pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
+        # pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
+        # direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)   # (N)
+        # offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
 
 
-        loss += semantic_loss + offset_norm_loss + offset_dir_loss
-
+        # loss += semantic_loss + offset_norm_loss + offset_dir_loss
+        loss += semantic_loss
 
         if epoch <= cfg.prepare_epochs:
             loss_dict_out['sem_loss'] = (semantic_loss.item(), semantic_labels.shape[0])
-            loss_dict_out['offset_norm_loss'] = (offset_norm_loss.item(), valid.sum())
-            loss_dict_out['offset_dir_loss'] = (offset_dir_loss.item(), valid.sum())
+            # loss_dict_out['offset_norm_loss'] = (offset_norm_loss.item(), valid.sum())
+            # loss_dict_out['offset_dir_loss'] = (offset_dir_loss.item(), valid.sum())
             loss_dict_out['loss'] = (loss.item(), semantic_labels.shape[0])
             return loss, loss_dict_out
 
@@ -255,8 +255,8 @@ class InstSetCriterion(nn.Module):
         loss_dict_out['dice_loss'] = (loss_dict['dice_loss'].item(), num_gt)
         loss_dict_out['cls_loss'] = (loss_dict['cls_loss'].item(), self.n_queries)
         loss_dict_out['sem_loss'] = (semantic_loss.item(), semantic_labels.shape[0])
-        loss_dict_out['offset_norm_loss'] = (offset_norm_loss.item(), valid.sum())
-        loss_dict_out['offset_dir_loss'] = (offset_dir_loss.item(), valid.sum())
+        # loss_dict_out['offset_norm_loss'] = (offset_norm_loss.item(), valid.sum())
+        # loss_dict_out['offset_dir_loss'] = (offset_dir_loss.item(), valid.sum())
         loss_dict_out['loss'] = (loss.item(), semantic_labels.shape[0])
 
         return loss, loss_dict_out

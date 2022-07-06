@@ -38,7 +38,7 @@ DETR:
 DATA:
   data_root: data
   dataset: scannetv2
-  filename_suffix: .npy
+  filename_suffix: _inst_nostuff.pth
 
   classes: 13
   ignore_label: -100
