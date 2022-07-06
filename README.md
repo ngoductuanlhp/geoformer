@@ -88,28 +88,39 @@ If you encounter problem during install CuGraph, please follow [CuGraph](https:/
 
 ## Data Preparation
 
-We follow [DyCo3D](https://github.com/aim-uofa/DyCo3D) to prepare ScannetV2 dataset. 
-The dataset files are organized as 
+## ScanNet v2 dataset
+
+1\) Download the [ScanNet](http://www.scan-net.org/) v2 dataset.
+
+2\) Put ``scans`` and ``scans_test`` folder as follows.
+
 ```
-GeoFormer
+geoformer
 ├── data
 │   ├── scannetv2
-│   │   ├── scenes
-│   │   ├── raws
-│   │   |   ├── *_vh_clean_2.ply
-│   │   |   ├── *_vh_clean_2.labels.ply
-│   │   |   ├── *_vh_clean_2.0.010000.segs.ply
-│   │   |   ├── *[0-9].aggregation.json
+│   │   ├── scans
+│   │   ├── scans_test
+```
+
+3\) Split and preprocess data
+```
+cd geoformer/data/scannetv2
+bash prepare_data.sh
+```
+
+The script data into train/val/test folder and preprocess the data. After running the script the scannet dataset structure should look like below.
+```
+geoformer
+├── data
+│   ├── scannetv2
+│   │   ├── scans
+│   │   ├── scans_test
+│   │   ├── train
+│   │   ├── val
+│   │   ├── test
 │   │   ├── val_gt
 ```
-First, copy all the required files (_vh_clean_2.ply, _vh_clean_2.labels.ply, _vh_clean_2.0.010000.segs.ply, [0-9].aggregation.json) to the folder data/scannetv2/raws
 
-To generate *npy file for training scenes, run:
-```
-python3 datasets/preprocess/prepare_data_inst.py
-```
-
-A new folder 'scenes' will be created in data/scannetv2
 
 ## Traing and Testing
 
