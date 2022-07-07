@@ -125,7 +125,7 @@ def do_test(model, dataset):
             test_scene_name = scene_infos['query_scene']
             active_label    = scene_infos['active_label']
             # logger.info("Test scene: {} {}/{}| Active classes: {}".format(test_scene_name, i, num_test_scenes, active_label))
-            logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes)}
+            logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes))
 
             N = query_dict['feats'].shape[0]
 
