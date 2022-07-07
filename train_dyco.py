@@ -161,7 +161,7 @@ def main():
     train_loader = dataset.trainLoader()
 
     # if is_primary():
-    logger.info(str(('Training classes: ', dataset.TRAINING_SEMANTIC_LABELS)))
+    logger.info(str(('Training classes: ', dataset.SEMANTIC_LABELS)))
     logger.info('Training samples: {}'.format(len(dataset.file_names)))
 
     num_iter = len(train_loader)

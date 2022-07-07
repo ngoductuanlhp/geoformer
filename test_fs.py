@@ -53,7 +53,7 @@ def load_set_support(model, dataset):
             
             support_vector = {}
             support_set = dataset.support_set[subset]
-            for cls in dataset.CLASS:
+            for cls in dataset.SEMANTIC_LABELS:
                 sup_vectors = []
                 list_scenes = support_set[cls]
                 for i in range(cfg.k_shot):
@@ -61,9 +61,6 @@ def load_set_support(model, dataset):
                     support_scene_name, support_instance_id = support_tuple[0], support_tuple[1]
                     support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
                         = dataset.load_single(support_scene_name, aug=False, permutate=False, val=True, support=True)
-
-                    # support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                    #     = dataset.load_single_block(support_scene_name, support_instance_id, aug=False, permutate=False, val=True)
 
                     support_mask = (support_instance_label == support_instance_id).astype(int)
 
@@ -115,6 +112,7 @@ def do_test(model, dataset):
     with torch.no_grad():
         matches = [{} for idx in range(cfg.run_num)]
         
+        start_time = time.time()
         for i, batch_input in enumerate(dataloader):
             nclusters = [0] * cfg.run_num
             clusters = [[] for idx in range(cfg.run_num)]
@@ -126,7 +124,8 @@ def do_test(model, dataset):
 
             test_scene_name = scene_infos['query_scene']
             active_label    = scene_infos['active_label']
-            logger.info("Test scene: {} {}/{}| Active classes: {}".format(test_scene_name, i, num_test_scenes, active_label))
+            # logger.info("Test scene: {} {}/{}| Active classes: {}".format(test_scene_name, i, num_test_scenes, active_label))
+            logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes)}
 
             N = query_dict['feats'].shape[0]
 
@@ -136,7 +135,6 @@ def do_test(model, dataset):
 
             for j, (label, support_dict) in enumerate(zip(active_label, list_support_dicts)):
                 for k in range(cfg.run_num):
-                    start_t = time.time()
                     remember = False if (j == 0 and k == 0) else True
 
                     support_embeddings = None
@@ -220,7 +218,10 @@ def do_test(model, dataset):
                     matches[k][test_scene_name]         = {}
                     matches[k][test_scene_name]['gt']   = gt2pred
                     matches[k][test_scene_name]['pred'] = pred2gt
-            logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
+
+            overlap_time = time.time() - start_time
+            logger.info(f'Elapsed time: {int(overlap_time)}s | Remained time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s')
+            # logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
         ##### evaluation
         if cfg.eval:
             run_dict = {}
@@ -229,7 +230,6 @@ def do_test(model, dataset):
                 avgs = eval.compute_averages(ap_scores)
                 eval.print_results(avgs, logger)
                 run_dict = eval.accumulate_averages_over_runs(run_dict, avgs)
-            # print("Finish {} run.".format(r))
 
             run_dict = eval.compute_averages_over_runs(run_dict)
             eval.print_results(run_dict, logger)

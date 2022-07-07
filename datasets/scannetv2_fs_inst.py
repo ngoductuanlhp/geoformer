@@ -49,20 +49,16 @@ class FSInstDataset:
         all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, 'scenes'))
         self.file_names = [os.path.join(self.data_root, self.dataset, 'scenes', f) for f in all_file_names if f.split('.')[0] in self.scan_names]
         self.file_names = sorted(self.file_names)
-        # self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*' + self.filename_suffix)))
 
-        # if test:
-        #     self.test_split = cfg.split  # val or test
-        #     self.test_workers = cfg.test_workers
-        #     self.batch_size  = 1
-        if split_set == 'train' or split_set == 'trainval':
-            self.TRAINING_SEMANTIC_LABELS = FOLD[cfg.cvfold]
-            self.TRAINING_SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.TRAINING_SEMANTIC_LABELS)}
-        else:
-            self.CLASS = FOLD[cfg.cvfold]
-        # self.class2scans_scenes = self.dataset.class2scans_scenes
-        # self.class2instances    = self.dataset.class2instances
-        # self.all_scenes         = self.dataset.all_scenes
+        self.SEMANTIC_LABELS = FOLD[cfg.cvfold]
+        self.SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.SEMANTIC_LABELS)}
+
+        # if split_set == 'train':
+        #     self.TRAINING_SEMANTIC_LABELS = FOLD[cfg.cvfold]
+        #     self.TRAINING_SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.TRAINING_SEMANTIC_LABELS)}
+        # else:
+        #     self.CLASS = FOLD[cfg.cvfold]
+
         class2scans_file = os.path.join(self.data_root, self.dataset, 'class2scans.pkl')
         with open(class2scans_file, 'rb') as f:
             self.class2scans_scenes = pickle.load(f)
@@ -81,14 +77,6 @@ class FSInstDataset:
         load_path = os.path.join(self.data_root, self.dataset, 'geo', 'scene_graph_info_test.pkl')
         with open(load_path, 'rb') as handle:
             self.scene_graph_info_test = pickle.load(handle)
-        # print('Load test info, total scenes:', len(self.scene_graph_info_test.keys()))
-
-        # self.geodist_train_files = os.listdir(os.path.join(self.data_root, self.dataset, 'geo_dist_train'))
-        # print('Total geodist train files:', len(self.geodist_train_files))
-
-        # self.geodist_test_files = os.listdir(os.path.join(self.data_root, self.dataset, 'geo_dist_test'))
-        # print('Total geodist test files:', len(self.geodist_test_files))
-    
     def __len__(self):
         return len(self.file_names)
         
@@ -96,9 +84,6 @@ class FSInstDataset:
         np.random.seed(np.random.get_state()[1][0] + worker_id)
 
     def trainLoader(self):
-        # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
-        # logger.info('Training samples: {}'.format(len(self.file_names)))
-
         train_set = list(range(len(self.file_names)))
         dataloader = DataLoader(
             train_set,
@@ -113,8 +98,6 @@ class FSInstDataset:
         return dataloader
 
     def trainLoader_debug(self):
-        # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
-        # logger.info('Training samples: {}'.format(len(self.file_names)))
 
         train_set = list(range(len(self.file_names)))[0:10]
         # sampler = InfSampler(train_set, shuffle=True)
@@ -193,22 +176,18 @@ class FSInstDataset:
             support_sets = []
             for subset in range(0, cfg.run_num):
                 random.seed(10 * subset)
-                support_set = {cls:[] for cls in self.CLASS}
-                for cls in self.CLASS:
+                support_set = {cls:[] for cls in self.SEMANTIC_LABELS}
+                for cls in self.SEMANTIC_LABELS:
                     for i in range(k_shot):
                         while True:
                             support_tuple       = random.choice(self.class2instances[cls])
                             support_scene_name, support_instance_id = support_tuple[0], support_tuple[1]
 
-                            # support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                            #     = self.load_single_block(support_scene_name, support_instance_id, aug=False,permutate=False,val=True)
                             support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
                                 = self.load_single(support_scene_name, aug=False, permutate=False, val=True)
                             support_mask = (support_instance_label == support_instance_id).astype(int)
 
                             ratio = np.count_nonzero(support_mask) / support_xyz_middle.shape[0]
-                            # print("Sup conditions: ", np.count_nonzero(support_mask), ratio)
-                            # if np.count_nonzero(support_mask) >= 1000 and ratio >= 0.05:
                             if np.count_nonzero(support_mask) >= 1000:
                                 print("Pick {}, {}".format(support_scene_name, support_instance_id))
                                 break
@@ -475,8 +454,8 @@ class FSInstDataset:
 
         total_inst_num = 0
         for idx, id in enumerate(ids):
-            sampled_class       = random.choice(self.TRAINING_SEMANTIC_LABELS)
-            modified_class      = self.TRAINING_SEMANTIC_LABELS_MAP[sampled_class]
+            sampled_class       = random.choice(self.SEMANTIC_LABELS)
+            modified_class      = self.SEMANTIC_LABELS_MAP[sampled_class]
 
             # ANCHOR Sampling query
             while True:
@@ -497,15 +476,7 @@ class FSInstDataset:
 
             scene_graph_info = self.scene_graph_info_train[query_scene_name]
 
-            # geo_dist = []
-            # max_len = scene_graph_info['locs_float_'].shape[0]
-            # for i, k in enumerate(geo_dist_pkl.keys()):
-            #     geo = np.ones((max_len))
-            #     geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
-            #     geo_dist.append(geo)
-            # geo_dist = np.stack(geo_dist, axis=0) # 128, N
-            # geo_dist[geo_dist >= 5] = 10
-            # geo_dist = geo_dist / 10.0
+
 
             geo_dist = self.process_geo_dist(scene_graph_info, geo_dist_pkl)
 
@@ -545,9 +516,6 @@ class FSInstDataset:
 
                 support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
                         = self.load_single(support_scene_name, aug=True, permutate=True, val=False, support=True)
-
-                # support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                # = self.load_single_block(support_scene_name, support_instance_id, aug=True, permutate=True, val=False)
             
                 support_mask = (support_instance_label == support_instance_id)
 
@@ -635,16 +603,6 @@ class FSInstDataset:
             geo_dist_pkl = pickle.load(handle)
         scene_graph_info = self.scene_graph_info_test[query_scene_name]
 
-            # geo_dist = []
-            # max_len = scene_graph_info['locs_float_'].shape[0]
-
-            # for i, k in enumerate(geo_dist_pkl.keys()):
-            #     geo = np.ones((max_len)) * 10
-            #     geo[geo_dist_pkl[k]['vertex'].astype(np.long)] = geo_dist_pkl[k]['dis']
-            #     geo_dist.append(geo)
-            # geo_dist = np.stack(geo_dist, axis=0) # 128, N
-            # geo_dist[geo_dist >= 5] = 10
-            # geo_dist = geo_dist / 10.0
 
         geo_dist = self.process_geo_dist(scene_graph_info, geo_dist_pkl)
         geo_dists = [torch.from_numpy(geo_dist).float()]
@@ -684,19 +642,6 @@ class FSInstDataset:
                 
                 support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
                     = self.load_single_block(support_scene_name, support_instance_id, aug=False, permutate=False, val=True)
-                # support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                #     = self.load_single(support_scene_name, aug=False, permutate=False, val=True)
-
-                # valid_indices = self.get_region_inst(support_xyz_middle, support_instance_label, support_instance_id)
-                # support_xyz_middle = support_xyz_middle[valid_indices]
-                # support_xyz_scaled = support_xyz_scaled[valid_indices]
-                # support_rgb = support_rgb[valid_indices]
-                # support_label = support_label[valid_indices]
-                # support_instance_label = support_instance_label[valid_indices]
-
-
-                # # FIXME substract offset
-                # support_xyz_scaled -= support_xyz_scaled.min(0) 
 
                 support_mask = (support_instance_label == support_instance_id).astype(int)
 
@@ -739,8 +684,6 @@ class FSInstDataset:
 
             # ANCHOR Sampling query
             query_scene_name    = self.file_names[id].split('/')[-1].split('.')[0]
-            # query_scene_name = "scene0505_02"
-            # print('query_scene_name', query_scene_name)
 
             query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label\
                     = self.load_single(query_scene_name, aug=False, permutate=False)
