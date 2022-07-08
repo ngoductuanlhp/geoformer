@@ -253,8 +253,8 @@ if __name__ == '__main__':
     logger.info('=> creating model ...')
 
     if cfg.test_model == 'geoformer':
-        from model.geoformer.geoformer_fs import GeoFormerFS
-        # from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
+        # from model.geoformer.geoformer_fs import GeoFormerFS
+        from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
         model = GeoFormerFS()
     elif cfg.test_model == 'dyco3d':
         from model.geoformer.dyco3d_fs import DyCo3dFS

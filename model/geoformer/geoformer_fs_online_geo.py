@@ -208,6 +208,7 @@ class GeoFormerFS(nn.Module):
             dim_feedforward=cfg.dec_ffn_dim,
             dropout=cfg.dec_dropout,
             normalize_before=True,
+            use_rel=True,
         )
 
         self.decoder = TransformerDecoder(
@@ -760,8 +761,9 @@ class GeoFormerFS(nn.Module):
                                     query_locs, query_embedding_pos, 
                                     geo_dist_arr)
 
-
-        mask_features_   = self.mask_tower(torch.unsqueeze(output_feats_, dim=2).permute(2,1,0)).permute(2,1,0)
+        context_mask_tower = torch.no_grad if 'mask_tower' in self.fix_module else torch.enable_grad
+        with context_mask_tower():
+            mask_features_   = self.mask_tower(torch.unsqueeze(output_feats_, dim=2).permute(2,1,0)).permute(2,1,0)
         
         ''' channel-wise correlate '''
         channel_wise_tensor = context_feats * support_embeddings.unsqueeze(1).repeat(1,cfg.n_decode_point,1)
@@ -829,12 +831,19 @@ class GeoFormerFS(nn.Module):
         context_feats           = context_feats.permute(2, 0, 1)
         query_embedding_pos     = query_embedding_pos.permute(2, 0, 1)
 
+        # Encode relative pos
+        relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])
+        n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
+        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, 3), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
+        relative_embbeding_pos   = relative_embbeding_pos.permute(2,3,0,1)
+
         # num_layers x n_queries x batch x channel
         dec_outputs = self.decoder(
             tgt=dec_inputs, 
             memory=context_feats, 
             pos=context_embedding_pos, 
-            query_pos=query_embedding_pos
+            query_pos=query_embedding_pos,
+            relative_pos=relative_embbeding_pos
         )
 
         if not training:

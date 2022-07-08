@@ -213,7 +213,7 @@ class FSInstSetCriterion(nn.Module):
             # print(batch, mask_logit_b.shape)
             if mask_logit_b == None:
                 continue
-            
+
             if cal_match:
                 pred_inds, inst_mask_gt, sem_cls_gt = self.matcher.forward_seg_single(mask_logit_b, similarity_score_b, 
                                                         instance_masked_b, semantic_masked_b, fewshot=True)
@@ -231,6 +231,10 @@ class FSInstSetCriterion(nn.Module):
             
             if num_gt_batch == 0:
                 continue
+
+            # print('mask_logit_pred', mask_logit_pred.shape)
+            # reduce memory         
+            # sampling_indices = torch.tensor(np.random.choice(mask_logit_pred.shape[1], 5000, replace=(5000>mask_logit_pred.shape[1])), dtype=torch.long).cuda()
             
             # print('mask', mask_logit_pred.shape, num_gt_batch)
             loss_dict['dice_loss'] += compute_dice_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)

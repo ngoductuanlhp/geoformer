@@ -44,7 +44,7 @@ DATA:
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 3
+  batch_size: 2
   full_scale: [128, 512]
   full_scale_support: [64, 128]
   max_npoint: 250000
@@ -74,6 +74,7 @@ TRAIN:
 
   # fix_module: []
   fix_module: [input_conv, unet, output_layer, semantic, semantic_linear, 
+    # mask_tower,
     set_aggregator, pos_embedding, similarity_net,
     # encoder_to_decoder_projection, query_projection,
     # decoder
