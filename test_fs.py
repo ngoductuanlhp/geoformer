@@ -18,7 +18,6 @@ from datasets.scannetv2_fs_inst import FSInstDataset
 from lib.pointgroup_ops.functions import pointgroup_ops
 
 
-BENCHMARK_SEMANTIC_LABELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]
 
 def init():
     os.makedirs(cfg.exp_path, exist_ok=True)
@@ -159,7 +158,7 @@ def do_test(model, dataset):
                     proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
                     proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
 
-                    benchmark_label = BENCHMARK_SEMANTIC_LABELS[label]
+                    benchmark_label = cfg.BENCHMARK_SEMANTIC_LABELS[label]
                     cluster_semantic = torch.ones((proposals_pred.shape[0], 1)) * benchmark_label
 
                     score_mask = (scores_pred > cfg.TEST_SCORE_THRESH)
@@ -201,7 +200,6 @@ def do_test(model, dataset):
                     cross_ious = intersection / (clusters_pn_h + clusters_pn_v - intersection)
                     pick_idxs_cluster = non_max_suppression(cross_ious.cpu().numpy(), cluster_scores[k].cpu().numpy(), cfg.TEST_NMS_THRESH)  # int, (nCluster, N)
                 
-                # print("NMS", len(pick_idxs_cluster), clusters[k].shape[0])
                 clusters[k]             = clusters[k][pick_idxs_cluster].detach().cpu().numpy()
                 cluster_scores[k]       = cluster_scores[k][pick_idxs_cluster].detach().cpu().numpy()
                 cluster_semantic_id[k]  = cluster_semantic_id[k][pick_idxs_cluster].detach().cpu().numpy()
@@ -256,6 +254,7 @@ if __name__ == '__main__':
 
     if cfg.test_model == 'geoformer':
         from model.geoformer.geoformer_fs import GeoFormerFS
+        # from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
         model = GeoFormerFS()
     elif cfg.test_model == 'dyco3d':
         from model.geoformer.dyco3d_fs import DyCo3dFS
@@ -271,13 +270,12 @@ if __name__ == '__main__':
     if os.path.isfile(checkpoint_fn):
         logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
         state = torch.load(checkpoint_fn)
-        curr_iter = state['iteration'] + 1
         model_state_dict = model.state_dict()
         loaded_state_dict = strip_prefix_if_present(state['state_dict'], prefix="module.")
         align_and_update_state_dicts(model_state_dict, loaded_state_dict)
         model.load_state_dict(model_state_dict)
 
-        logger.info("=> loaded checkpoint '{}' (start_iter {})".format(checkpoint_fn, curr_iter))
+        logger.info("=> loaded checkpoint '{}')".format(checkpoint_fn))
     else:
         raise RuntimeError
 

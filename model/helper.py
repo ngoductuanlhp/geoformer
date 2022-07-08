@@ -1,7 +1,7 @@
 import torch.nn as nn
 from functools import partial
 import copy
-
+import torch
 
 class BatchNormDim1Swap(nn.BatchNorm1d):
     """
@@ -110,3 +110,9 @@ class GenericMLP(nn.Module):
 
 def get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+
+def unique_with_inds(x, dim=-1):
+    unique, inverse = torch.unique(x, return_inverse=True, dim=dim)
+    perm = torch.arange(inverse.size(dim), dtype=inverse.dtype, device=inverse.device)
+    inverse, perm = inverse.flip([dim]), perm.flip([dim])
+    return unique, inverse.new_empty(unique.size(dim)).scatter_(dim, inverse, perm)

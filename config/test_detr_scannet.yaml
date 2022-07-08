@@ -75,6 +75,8 @@ TEST:
   test_workers: 0
   test_seed: 567
 
+  BENCHMARK_SEMANTIC_LABELS: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]
+
   TEST_NMS_THRESH: 0.3
   TEST_SCORE_THRESH: 0.1
   TEST_NPOINT_THRESH: 100

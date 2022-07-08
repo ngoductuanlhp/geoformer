@@ -15,9 +15,9 @@ from solver import PolyLR
 import datetime
 import math
 
-from criterion_fs import FSInstSetCriterion
-from model.geoformer.geoformer_fs import GeoFormerFS
-from datasets.scannetv2_fs_inst import FSInstDataset
+from criterion_fs2 import FSInstSetCriterion
+from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
+from datasets.scannetv2_fs_inst_onl import FSInstDataset
 
 from util.utils_scheduler import adjust_learning_rate, cosine_lr_after_step
 
@@ -48,7 +48,7 @@ def train_one_epoch(
     am_dict = {}
 
     model.train()
-    model.set_eval()
+    # model.set_eval()
     net_device = next(model.parameters()).device
     
     num_iter = len(train_loader)
@@ -63,7 +63,7 @@ def train_one_epoch(
         current_iter = (epoch - 1) * num_iter + iteration + 1
         remain_iter = max_iter - current_iter
 
-        curr_lr = adjust_learning_rate(optimizer, current_iter/max_iter, max_iter)
+        curr_lr = adjust_learning_rate(optimizer, current_iter/max_iter, cfg.epochs)
 
         support_dict, query_dict, scene_infos = batch
 
@@ -110,13 +110,6 @@ def train_one_epoch(
                     mem_mb, 
                     iter_time.val, remain_time=remain_time))
             else:
-                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
-                    (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, 
-                    am_dict['loss'].val, am_dict['loss'].avg,
-                    am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
-                    am_dict['dice_loss'].val, am_dict['dice_loss'].avg,
-                    mem_mb, 
-                    iter_time.val, remain_time=remain_time))
                 # logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sim loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
                 #     (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, 
                 #     am_dict['loss'].val, am_dict['loss'].avg,
@@ -125,6 +118,15 @@ def train_one_epoch(
                 #     am_dict['dice_loss'].val, am_dict['dice_loss'].avg,
                 #     mem_mb, 
                 #     iter_time.val, remain_time=remain_time))
+
+                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                    (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, 
+                    am_dict['loss'].val, am_dict['loss'].avg,
+                    # am_dict['sim_loss'].val, am_dict['sim_loss'].avg,
+                    am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
+                    am_dict['dice_loss'].val, am_dict['dice_loss'].avg,
+                    mem_mb, 
+                    iter_time.val, remain_time=remain_time))
 
 
     if (epoch % cfg.save_freq == 0 or iteration==cfg.epochs):
@@ -155,10 +157,9 @@ if __name__ == '__main__':
     model = model.cuda()
 
     logger.info('# training parameters: {}'.format(sum([x.nelement() for x in model.parameters() if x.requires_grad])))
-
-    cal_sim = 'similarity_net' not in cfg.fix_module
-    print('Cal sim loss:', cal_sim)
-    criterion = FSInstSetCriterion(cal_simloss=cal_sim)
+    
+    
+    criterion = FSInstSetCriterion()
     criterion = criterion.cuda()
 
     ##### optimizer
@@ -167,6 +168,7 @@ if __name__ == '__main__':
     elif cfg.optim == 'SGD':
         optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay)
     
+    logger.info(f'Learning rate: {cfg.lr}')
     start_epoch = -1
     
     if cfg.pretrain:
@@ -196,7 +198,7 @@ if __name__ == '__main__':
 
 
     dataset = FSInstDataset(split_set='train')
-    dataset.load_scene_graph_info()
+    # dataset.load_scene_graph_info()
     train_loader = dataset.trainLoader()
 
 

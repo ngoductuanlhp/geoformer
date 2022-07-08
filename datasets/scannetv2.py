@@ -3,10 +3,27 @@ import os, sys, glob, math, numpy as np
 import scipy.interpolate
 sys.path.append('../')
 
-FOLD0 = ['cabinet', 'bed', 'chair', 'door', 'bookshelf', 'counter',  'desk', 'curtain', 'bathtub']
-FOLD1 = ['otherfurniture', 'picture', 'refridgerator', 'shower curtain', 'sink', 'sofa', 'table', 'toilet', 'window']
 
-TRAINING_SEMANTIC_LABELS = [2,3,4,7,9,11,12,13,18]
+
+# TRAINING_SEMANTIC_LABELS = [2,3,4,7,9,11,12,13,18]
+
+FOLD0 = [2,3,4,7,9,11,12,13,18]
+FOLD1 = [5,6,8,10,14,15,16,17,19]
+FOLD2 = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+
+FOLD = {
+    0: FOLD0,
+    1: FOLD1, 
+}
+
+FOLD0_NAME = ['cabinet', 'bed', 'chair', 'door', 'bookshelf', 'counter',  'desk', 'curtain', 'bathtub']
+FOLD1_NAME = ['otherfurniture', 'picture', 'refridgerator', 'shower curtain', 'sink', 'sofa', 'table', 'toilet', 'window']
+
+FOLD_NAME = {
+    0: FOLD0_NAME,
+    1: FOLD1_NAME,
+}
+
 
 class ScanNetDataset(object):
     def __init__(self, cvfold, data_path):

@@ -64,7 +64,7 @@ def train_one_epoch(
         remain_iter = max_iter - current_iter
 
         if epoch > cfg.prepare_epochs:
-            curr_lr = adjust_learning_rate(optimizer, current_iter/max_iter, max_iter)
+            curr_lr = adjust_learning_rate(optimizer, current_iter/max_iter, cfg.epochs)
         else:
             curr_lr = cosine_lr_after_step(optimizer, cfg.lr, epoch, cfg.prepare_epochs, cfg.epochs)
 

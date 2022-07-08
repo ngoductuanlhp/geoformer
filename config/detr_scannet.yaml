@@ -53,7 +53,7 @@ STRUCTURE:
 TRAIN:
   start_epoch: 0
   prepare_epochs: 120
-  epochs: 400
+  epochs: 500
   num_workers: 8 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001

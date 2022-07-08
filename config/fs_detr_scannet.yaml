@@ -64,7 +64,7 @@ TRAIN:
   epochs: 200
   num_workers: 4 # data loader workers
   optim: Adam # Adam or SGD
-  lr: 0.01
+  lr: 0.005
   step_epoch: 384
   multiplier: 0.5
   momentum: 0.9

@@ -18,13 +18,7 @@ import pickle
 from util.config import cfg
 # from util.log import logger
 from lib.pointgroup_ops.functions import pointgroup_ops
-
-# TRAINING_SEMANTIC_LABELS = [2,3,4,7,9,11,12,13,18]
-# TRAINING_SEMANTIC_LABELS = [2,3,4,7,9,11,12,13,18]
-
-FOLD0 = [2,3,4,7,9,11,12,13,18]
-FOLD1 = [5,6,8,10,14,15,16,17,19]
-FOLD2 = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+from .scannetv2 import FOLD, FOLD_NAME
 
 class InstDataset(TorchDataset):
     def __init__(self, split_set='train'):
@@ -49,19 +43,8 @@ class InstDataset(TorchDataset):
         self.file_names = sorted(self.file_names)
         # self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*' + self.filename_suffix)))
 
-        # if test:
-        #     self.test_split = cfg.split  # val or test
-        #     self.test_workers = cfg.test_workers
-        #     self.batch_size  = 1
-        if cfg.cvfold == 0:
-            self.TRAINING_SEMANTIC_LABELS = FOLD0
-            self.TRAINING_SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.TRAINING_SEMANTIC_LABELS)}
-        else:
-            self.TRAINING_SEMANTIC_LABELS = FOLD1
-            self.TRAINING_SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.TRAINING_SEMANTIC_LABELS)}
-
-        class2scans = self.get_class2scans()
-        class2instances = self.get_class2instances()
+        self.SEMANTIC_LABELS = FOLD[cfg.cvfold]
+        self.SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.SEMANTIC_LABELS)}
 
     def __len__(self):
         return len(self.file_names)
@@ -79,7 +62,7 @@ class InstDataset(TorchDataset):
         else:
             min_ratio = .05  # to filter out scans with only rare labelled points
             min_pts = 100  # to filter out scans with only rare labelled points
-            class2scans = {k:[] for k in FOLD2}
+            class2scans = {k:[] for k in FOLD[2]} # NOTE generate all classes 
 
             for file in glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*.npy')):
                 scan_name = os.path.basename(file)[:-4]
@@ -89,7 +72,7 @@ class InstDataset(TorchDataset):
                 classes = np.unique(labels)
                 print('{0} | shape: {1} | classes: {2}'.format(scan_name, data.shape, list(classes)))
                 for class_id in classes:
-                    if class_id == -100 or class_id not in FOLD2: 
+                    if class_id == -100 or class_id not in FOLD[2]: 
                         continue
                     #if the number of points for the target class is too few, do not add this sample into the dictionary
                     num_points = np.count_nonzero(labels == class_id)
@@ -98,7 +81,7 @@ class InstDataset(TorchDataset):
                         class2scans[class_id].append(scan_name)
 
             print('==== class to scans mapping is done ====')
-            for class_id in FOLD2:
+            for class_id in FOLD[2]:
                 print('\t class_id: {0} | min_ratio: {1} | min_pts: {2} | num of scans: {3}'.format(
                           class_id,  min_ratio, min_pts, len(class2scans[class_id])))
 
@@ -116,7 +99,7 @@ class InstDataset(TorchDataset):
         else:
             min_ratio = 0.01  # to filter out scans with only rare labelled points
             min_pts = 100  # to filter out scans with only rare labelled points
-            class2instances = {k:[] for k in FOLD2}
+            class2instances = {k:[] for k in FOLD[2]}
 
             for file in sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*.npy'))):
                 scan_name = os.path.basename(file)[:-4]
@@ -132,7 +115,7 @@ class InstDataset(TorchDataset):
                     threshold = max(int(data.shape[0]*min_ratio), min_pts)
                     one_point = (instance_labels==instance_id).nonzero()[0][0]
                     class_id = labels[one_point]
-                    if class_id not in FOLD2:
+                    if class_id not in FOLD[2]:
                         continue
                     # print("\t Scan {0} | num point {1}".format(scan_name, num_points))
                     if num_points > threshold and class_id != -100:
@@ -140,7 +123,7 @@ class InstDataset(TorchDataset):
                         class2instances[class_id].append([scan_name, instance_id])
 
             print('==== class to instances mapping is done ====')
-            for class_id in FOLD2:
+            for class_id in FOLD[2]:
                 print('\t class_id: {0} |  num of instances: {1}'.format(
                           class_id, len(class2instances[class_id])))
 
@@ -260,7 +243,7 @@ class InstDataset(TorchDataset):
         # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
         # logger.info('Training samples: {}'.format(len(self.file_names))) 
 
-        self.test_names = [os.path.basename(i).split('.')[0] for i in self.file_names]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
 
         test_set = list(np.arange(len(self.test_names)))
 
@@ -295,12 +278,14 @@ class InstDataset(TorchDataset):
         for i, ind in enumerate(inds):
             file_path = self.file_names[ind]
 
-            xyz_origin, rgb, label, instance_label  = torch.load(file_path)
+            data = np.load(file_path)
+
             random_idx = np.random.permutation(xyz_origin.shape[0])
-            xyz_origin = xyz_origin[random_idx]
-            rgb = rgb[random_idx]
-            label = label[random_idx].astype(np.int)
-            instance_label = instance_label[random_idx].astype(np.int)
+            data = data[random_idx]
+            xyz_origin = data[:, :3]
+            rgb = data[:, 3:6]
+            label = data[:, 6].astype(np.int)
+            instance_label = data[:, 7].astype(np.int)
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
@@ -328,7 +313,7 @@ class InstDataset(TorchDataset):
             label_2 = np.ones_like(label) * -1
             label_2[(label==0).nonzero()] = 0 # floor
             label_2[(label==1).nonzero()] = 1 # wall
-            for idx, train_class in enumerate(self.TRAINING_SEMANTIC_LABELS):
+            for idx, train_class in enumerate(self.SEMANTIC_LABELS):
                 label_2[(label==train_class).nonzero()] = idx + 4
             label_2[(label==-100).nonzero()] = 2 # unannotate
             label_2[(label_2==-1).nonzero()] = 3 # test candidate
@@ -403,8 +388,12 @@ class InstDataset(TorchDataset):
 
         for i, ind in enumerate(inds):
             file_path = self.file_names[ind]
+            data = np.load(file_path)
 
-            xyz_origin, rgb  = torch.load(file_path)
+            random_idx = np.random.permutation(xyz_origin.shape[0])
+            data = data[random_idx]
+            xyz_origin = data[:, :3]
+            rgb = data[:, 3:6]
 
             ### flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, False, False, False)

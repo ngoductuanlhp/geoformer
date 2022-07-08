@@ -114,7 +114,7 @@ class GeoFormerFS(nn.Module):
         for i in range(self.embedding_conv_num):
             if i ==0:
                 if USE_COORDS:
-                    weight_nums.append((self.output_dim+3) * self.output_dim)
+                    weight_nums.append((self.output_dim+3+1) * self.output_dim)
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
                 bias_nums.append(self.output_dim)
@@ -222,13 +222,6 @@ class GeoFormerFS(nn.Module):
         
         self.save_dict = {}
 
-    def train(self, mode=True):
-        super().train(mode)
-        for mod in self.fix_module:
-            mod = getattr(self, mod)
-            for m in mod.modules():
-                m.eval()
-
     def set_eval(self):
         for m in self.fix_module:
             self.module_map[m] = self.module_map[m].eval()
@@ -304,18 +297,7 @@ class GeoFormerFS(nn.Module):
         sampling_indices = torch.tensor(np.random.choice(batch_points, npoint, replace=False), dtype=torch.int).cuda()
         return sampling_indices
 
-    def sample_query_embedding(self, xyz, pc_dims, n_quries):
-        query_sampling_inds = furthest_point_sample(xyz, n_quries).long()
-
-        query_locs = [torch.gather(xyz[..., x], 1, query_sampling_inds) for x in range(3)]
-        query_locs = torch.stack(query_locs)
-        query_locs = query_locs.permute(1, 2, 0)
-
-        query_embedding_pos = self.pos_embedding(query_locs, input_range=pc_dims)
-        query_embedding_pos = self.query_projection(query_embedding_pos.float())
-        return query_locs, query_embedding_pos, query_sampling_inds
-
-    def sample_query_embedding_fix(self, xyz, pc_dims, query_sampling_inds):
+    def sample_query_embedding(self, xyz, pc_dims, query_sampling_inds):
 
         query_locs = [torch.gather(xyz[..., x], 1, query_sampling_inds) for x in range(3)]
         query_locs = torch.stack(query_locs)
@@ -358,7 +340,10 @@ class GeoFormerFS(nn.Module):
 
         geo_dist = geo_dist.cuda()
 
-        relative_coords = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+        
+
+        # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+        relative_coords = geo_dist.unsqueeze(-1)
         relative_coords = relative_coords.permute(0,2,1)
 
         if use_coords:
@@ -367,6 +352,11 @@ class GeoFormerFS(nn.Module):
             elif relative_coords.shape[2] < x.shape[2]:
                 res = x.shape[2] - relative_coords.shape[2]
                 relative_coords = torch.cat([relative_coords, torch.ones((relative_coords.shape[0], relative_coords.shape[1], res)).float().to(relative_coords.device)],dim=2)
+            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+
+            relative_coords = fps_sampling_coords[:, None, :] - coords_[None, :,:]
+            relative_coords = relative_coords.permute(0,2,1)
+
             x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
 
         x = x.reshape(1, -1, n_mask) ### 1 * (num_inst*c') * Nmask
@@ -473,7 +463,10 @@ class GeoFormerFS(nn.Module):
         batch_offsets   = batch_input['batch_offsets']
         support_mask    = batch_input['support_masks']
 
-
+        # pc_dims = [
+        #     batch_input["pc_maxs"],
+        #     batch_input["pc_mins"],
+        # ]
         with torch.no_grad():
             sparse_input = self.preprocess_input(batch_input, batch_size)
 
@@ -618,7 +611,7 @@ class GeoFormerFS(nn.Module):
 
         geo_dist_arr = scene_dict['geo_dists']
 
-        query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding_fix(context_locs, pc_dims, query_sampling_inds_arr)
+        query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding(context_locs, pc_dims, query_sampling_inds_arr)
         
         ''' channel-wise correlate '''
         channel_wise_tensor = context_feats * support_embeddings.unsqueeze(1).repeat(1,cfg.n_decode_point,1)
