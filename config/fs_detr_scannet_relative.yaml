@@ -21,6 +21,7 @@ DETR:
   dec_ffn_dim: 64
   dec_dropout: 0.1
   dec_nhead: 4
+  use_rel: True # NOTE modify transformer to input relative pos of n_queires x n _context
 
   n_downsampling: 20000
   n_decode_point: 2048
@@ -60,8 +61,8 @@ STRUCTURE:
 
 TRAIN:
   start_epoch: 0
-  prepare_epochs: 0
-  epochs: 100
+  prepare_epochs: 10
+  epochs: 50
   num_workers: 8 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.01
@@ -70,12 +71,13 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 2  # also eval_freq
-  save_freq_last: 2
+  save_freq_last: 1
 
   # fix_module: []
   fix_module: [input_conv, unet, output_layer, semantic, semantic_linear, 
-    set_aggregator, pos_embedding, similarity_net,
-    mask_tower,
+    # set_aggregator, pos_embedding, 
+    # similarity_net,
+    # mask_tower,
     # encoder_to_decoder_projection, query_projection,
     # decoder
   ]

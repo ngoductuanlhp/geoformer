@@ -132,7 +132,9 @@ class InstSetCriterion(nn.Module):
             'cls_loss': 1,
         }
 
-    def single_layer_loss(self, mask_prediction, instance_masked, semantic_masked, batch_ids):
+        self.cached = []
+
+    def single_layer_loss(self, mask_prediction, instance_masked, semantic_masked, batch_ids, cal_match=False):
         loss = torch.tensor(0.0, requires_grad=True).to(instance_masked.device)
         loss_dict = {}
 
@@ -159,9 +161,17 @@ class InstSetCriterion(nn.Module):
 
             if mask_logit_b == None:
                 continue
+
+            if cal_match:
+                mask_logit_b_detach = mask_logit_b.detach()
+                cls_logit_b_detach = cls_logit_b.detach()
+                pred_inds, inst_mask_gt, sem_cls_gt = self.matcher.forward_seg_single(mask_logit_b_detach, cls_logit_b_detach, 
+                                                        instance_masked_b, semantic_masked_b)
+                
+                self.cached.append((pred_inds, inst_mask_gt, sem_cls_gt))
+            else:
+                pred_inds, inst_mask_gt, sem_cls_gt = self.cached[batch]
             
-            pred_inds, inst_mask_gt, sem_cls_gt = self.matcher.forward_seg_single(mask_logit_b, cls_logit_b, 
-                                                    instance_masked_b, semantic_masked_b)
             if pred_inds is None:
                 continue
             mask_logit_pred = mask_logit_b[pred_inds]
@@ -204,7 +214,10 @@ class InstSetCriterion(nn.Module):
         loss_dict_out = {}
         loss = torch.tensor(0.0, requires_grad=True).to(semantic_scores.device)
 
-        semantic_loss = self.semantic_criterion(semantic_scores, semantic_labels)
+        if 'semantic' in cfg.fix_module:
+            semantic_loss = self.semantic_criterion(semantic_scores, semantic_labels)
+        else:
+            semantic_loss = torch.tensor(0.0, requires_grad=True).to(semantic_scores.device)
         
         # gt_offsets = instance_info[:, 0:3] - coords   # (N, 3)
         # pt_diff = pt_offsets - gt_offsets   # (N, 3)
@@ -242,7 +255,8 @@ class InstSetCriterion(nn.Module):
         
 
         ''' Main loss '''
-        main_loss, loss_dict, num_gt = self.single_layer_loss(mask_predictions[-1], instance_masked, semantic_masked, batch_ids)
+        self.cached = []
+        main_loss, loss_dict, num_gt = self.single_layer_loss(mask_predictions[-1], instance_masked, semantic_masked, batch_ids, cal_match=True)
 
         loss += main_loss
 

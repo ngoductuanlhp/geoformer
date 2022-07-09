@@ -48,7 +48,7 @@ def train_one_epoch(
     am_dict = {}
 
     model.train()
-    model.set_eval()
+
     net_device = next(model.parameters()).device
     
     num_iter = len(train_loader)
@@ -111,13 +111,19 @@ def train_one_epoch(
                     mem_mb, 
                     iter_time.val, remain_time=remain_time))
             else:
-                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sem loss: {:.4f}({:.4f}) | Cls loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Cls loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
                     (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, am_dict['loss'].val, am_dict['loss'].avg,\
-                    am_dict['sem_loss'].val, am_dict['sem_loss'].avg,
                     am_dict['cls_loss'].val, am_dict['cls_loss'].avg,\
                     am_dict['dice_loss'].val, am_dict['dice_loss'].avg, am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
                     mem_mb, 
                     iter_time.val, remain_time=remain_time))
+                # logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sem loss: {:.4f}({:.4f}) | Cls loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                #     (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, am_dict['loss'].val, am_dict['loss'].avg,\
+                #     am_dict['sem_loss'].val, am_dict['sem_loss'].avg,
+                #     am_dict['cls_loss'].val, am_dict['cls_loss'].avg,\
+                #     am_dict['dice_loss'].val, am_dict['dice_loss'].avg, am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
+                #     mem_mb, 
+                #     iter_time.val, remain_time=remain_time))
                     
     if (epoch % cfg.save_freq == 0 or iteration==cfg.epochs):
         checkpoint(model, optimizer, epoch, cfg.output_path, None, None)
@@ -202,7 +208,7 @@ def main():
     train_loader = dataset.trainLoader()
 
     # if is_primary():
-    logger.info(f'Training classes: {dataset.TRAINING_SEMANTIC_LABELS}')
+    logger.info(f'Training classes: {dataset.SEMANTIC_LABELS}')
     logger.info('Training samples: {}'.format(len(dataset.file_names)))
 
     if start_epoch == -1:

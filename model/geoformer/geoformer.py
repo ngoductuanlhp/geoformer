@@ -76,12 +76,6 @@ class GeoFormer(nn.Module):
         )
         self.semantic_linear = nn.Linear(m, classes, bias=True)
 
-        # self.offset = nn.Sequential(
-        #     nn.Linear(m, m, bias=True),
-        #     norm_fn(m),
-        #     nn.ReLU()
-        # )
-        # self.offset_linear = nn.Linear(m, 3, bias=True)
 
         ################################
         ################################
@@ -158,6 +152,7 @@ class GeoFormer(nn.Module):
             dim_feedforward=cfg.dec_ffn_dim,
             dropout=cfg.dec_dropout,
             normalize_before=True,
+            use_rel=cfg.use_rel,
         )
 
         self.decoder = TransformerDecoder(
@@ -199,19 +194,27 @@ class GeoFormer(nn.Module):
         self.threshold_ins = cfg.threshold_ins
         self.min_pts_num = cfg.min_pts_num
         #### fix parameter
-        self.module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
-                      'semantic': self.semantic, 'semantic_linear': self.semantic_linear,
-                    #   'offset': self.offset, 'offset_linear': self.offset_linear,
-                      'mask_tower': self.mask_tower}
+        # self.module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
+        #               'semantic': self.semantic, 'semantic_linear': self.semantic_linear,
+        #             #   'offset': self.offset, 'offset_linear': self.offset_linear,
+        #               'mask_tower': self.mask_tower
+        #               }
 
-        for m in self.fix_module:
-            mod = self.module_map[m]
+        for mod_name in self.fix_module:
+            mod = getattr(self, mod_name)
             for param in mod.parameters():
                 param.requires_grad = False
 
-    def set_eval(self):
-        for m in self.fix_module:
-            self.module_map[m] = self.module_map[m].eval()
+    def train(self, mode=True):
+        super().train(mode)
+        for mod_name in self.fix_module:
+            mod = getattr(self, mod_name)
+            for m in mod.modules():
+                m.eval()
+
+    # def set_eval(self):
+    #     for m in self.fix_module:
+    #         self.module_map[m] = self.module_map[m].eval()
 
     @staticmethod
     def set_bn_init(m):
@@ -472,33 +475,30 @@ class GeoFormer(nn.Module):
 
         N_points = locs_float.shape[0]
 
-        # with torch.no_grad():
-        sparse_input = self.preprocess_input(batch_input)
+        context_mbackbone = torch.no_grad if ('unet' in self.fix_module) and ('semantic' in self.fix_module) else torch.enable_grad
+        with context_mbackbone():
+            sparse_input = self.preprocess_input(batch_input)
 
-        ''' Backbone net '''
-        output = self.input_conv(sparse_input)
-        output = self.unet(output)
-        output = self.output_layer(output)
-        output_feats = output.features[p2v_map.long()]
-        output_feats = output_feats.contiguous()
+            ''' Backbone net '''
+            output = self.input_conv(sparse_input)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[p2v_map.long()]
+            output_feats = output_feats.contiguous()
 
-        ''' Semantic head'''
-        semantic_feats  = self.semantic(output_feats)
-        semantic_scores = self.semantic_linear(semantic_feats)   # (N, nClass), float
-        semantic_preds  = semantic_scores.max(1)[1]    # (N), long
+            ''' Semantic head'''
+            semantic_feats  = self.semantic(output_feats)
+            semantic_scores = self.semantic_linear(semantic_feats)   # (N, nClass), float
+            semantic_preds  = semantic_scores.max(1)[1]    # (N), long
 
-        ''' Offset head'''
-        # pt_offsets_feats = self.offset(output_feats)
-        # pt_offsets = self.offset_linear(pt_offsets_feats)   # (N, 3), float32
-
-        # outputs['pt_offsets'] = pt_offsets
-
-        outputs['semantic_scores'] = semantic_scores
+            outputs['semantic_scores'] = semantic_scores
 
         if epoch <= self.prepare_epochs:
             return outputs
 
         mask_features   = self.mask_tower(torch.unsqueeze(output_feats, dim=2).permute(2,1,0)).permute(2,1,0)
+
+        # print('num point', N_points, batch_size)
 
         if cfg.train_fold == cfg.cvfold:
             fg_condition = semantic_preds >= 4
@@ -581,14 +581,20 @@ class GeoFormer(nn.Module):
         context_feats           = context_feats.permute(2, 0, 1)
         query_embedding_pos     = query_embedding_pos.permute(2, 0, 1)
 
-        
+        # Encode relative pos
+        relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])
+        n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
+        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
+        relative_embbeding_pos   = relative_embbeding_pos.permute(2,3,0,1)
 
+        # print('relative_embbeding_pos', relative_embbeding_pos.shape)
         # num_layers x n_queries x batch x channel
         dec_outputs = self.decoder(
             dec_inputs, 
             context_feats, 
             pos=context_embedding_pos, 
-            query_pos=query_embedding_pos
+            query_pos=query_embedding_pos,
+            relative_pos=relative_embbeding_pos
         )
 
         if not training:

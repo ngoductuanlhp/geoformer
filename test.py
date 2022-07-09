@@ -42,7 +42,7 @@ def do_test(model, dataloader, cur_epoch):
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
 
 
-    model = model.eval()
+    model.eval()
     net_device = next(model.parameters()).device
 
     num_test_scenes = len(dataloader)
@@ -81,6 +81,8 @@ def do_test(model, dataloader, cur_epoch):
                 proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
 
                 semantic_test = FOLD1 if cfg.cvfold == 1 else FOLD0
+
+                # print(semantic_test)
                 temp = torch.tensor(semantic_test, device=scores_pred.device)[seg_preds-4]
                 # temp = torch.tensor(semantic_test, device=scores_pred.device)[semantic_pred[proposals_idx[:, 1][proposals_offset[:-1].long()].long()] - 4]
                 semantic_id = torch.tensor(BENCHMARK_SEMANTIC_LABELS, device=scores_pred.device)[temp] # (nProposal), long

@@ -38,8 +38,8 @@ class InstDataset(TorchDataset):
         with open(split_filenames, "r") as f:
             self.scan_names = f.read().splitlines()
 
-        all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, split_set))
-        self.file_names = [os.path.join(self.data_root, self.dataset, split_set, f) for f in all_file_names if f.split('.')[0][:12] in self.scan_names]
+        all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, 'scenes'))
+        self.file_names = [os.path.join(self.data_root, self.dataset, 'scenes', f) for f in all_file_names if f.split('.')[0][:12] in self.scan_names]
         self.file_names = sorted(self.file_names)
         # self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*' + self.filename_suffix)))
 
@@ -243,7 +243,7 @@ class InstDataset(TorchDataset):
         # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
         # logger.info('Training samples: {}'.format(len(self.file_names))) 
 
-        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names][:100]
 
         test_set = list(np.arange(len(self.test_names)))
 
@@ -280,8 +280,8 @@ class InstDataset(TorchDataset):
 
             data = np.load(file_path)
 
-            random_idx = np.random.permutation(xyz_origin.shape[0])
-            data = data[random_idx]
+            # random_idx = np.random.permutation(data.shape[0])
+            # data = data[random_idx]
             xyz_origin = data[:, :3]
             rgb = data[:, 3:6]
             label = data[:, 6].astype(np.int)
@@ -390,8 +390,6 @@ class InstDataset(TorchDataset):
             file_path = self.file_names[ind]
             data = np.load(file_path)
 
-            random_idx = np.random.permutation(xyz_origin.shape[0])
-            data = data[random_idx]
             xyz_origin = data[:, :3]
             rgb = data[:, 3:6]
 

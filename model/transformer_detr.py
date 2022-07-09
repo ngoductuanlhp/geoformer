@@ -408,7 +408,7 @@ class TransformerDecoderLayer(nn.Module):
         if dropout_attn is None:
             dropout_attn = dropout
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        
 
         self.norm1 = NORM_DICT[norm_fn_name](d_model)
         self.norm2 = NORM_DICT[norm_fn_name](d_model)
@@ -428,12 +428,22 @@ class TransformerDecoderLayer(nn.Module):
 
         self.use_rel = use_rel
 
+        self.nhead = nhead
+
         if self.use_rel:
             self.attn_mlp = nn.Sequential(
                 nn.Linear(d_model, d_model),
                 nn.ReLU(),
                 nn.Linear(d_model, d_model),
             )
+            self.v_mlp = nn.Linear(d_model, d_model)
+            self.out_mlp = nn.Linear(d_model, d_model)
+            # self.linear_q = nn.Linear(d_model, d_model, True)
+            # self.linear_k = nn.Linear(d_model, d_model, True)
+            # self.linear_v = nn.Linear(d_model, d_model, True)
+            # self.linear_o = nn.Linear(d_model, d_model, True)
+        else:
+            self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
@@ -490,6 +500,21 @@ class TransformerDecoderLayer(nn.Module):
             return tgt, attn
         return tgt, None
 
+    def _reshape_to_batches(self, x):
+        batch_size, seq_len, in_feature = x.size()
+        sub_dim = in_feature // self.nhead
+        return x.reshape(batch_size, seq_len, self.nhead, sub_dim)\
+                .permute(0, 2, 1, 3)\
+                .reshape(batch_size * self.nhead, seq_len, sub_dim)
+
+    def _reshape_from_batches(self, x):
+        batch_size, seq_len, in_feature = x.size()
+        batch_size //= self.head_num
+        out_dim = in_feature * self.nhead
+        return x.reshape(batch_size, self.nhead, seq_len, in_feature)\
+                .permute(0, 2, 1, 3)\
+                .reshape(batch_size, seq_len, out_dim)
+
     def forward_pre_rel(self, tgt, memory,
                     tgt_mask: Optional[Tensor] = None,
                     memory_mask: Optional[Tensor] = None,
@@ -499,6 +524,8 @@ class TransformerDecoderLayer(nn.Module):
                     query_pos: Optional[Tensor] = None,
                     relative_pos: Optional[Tensor] = None,
                     return_attn_weights: Optional [bool] = False):
+
+        # NOTE self attn between queries themself: use absolute euclid pos
         tgt2 = self.norm1(tgt)
         q = k = self.with_pos_embed(tgt2, query_pos)
         tgt2 = self.self_attn(q, k, value=tgt2, attn_mask=tgt_mask,
@@ -512,19 +539,36 @@ class TransformerDecoderLayer(nn.Module):
         #                            value=memory, attn_mask=memory_mask,
         #                            key_padding_mask=memory_key_padding_mask)
         
-        tgt2_expand = tgt2.unsqueeze(1).repeat(1,relative_pos.shape[1], 1, 1)
+        # NOTE cross attn between queries and contexst: use relative pos
+        n_queries, n_context, batch, channel = relative_pos.shape
+        tgt2_expand = tgt2[:, None, :, :].repeat(1,n_context, 1, 1)
         # tgt2_expand = tgt2_expand + relative_pos
 
-        memory_expand = memory.unsqueeze(0).repeat(relative_pos.shape[0], 1, 1, 1)
+        memory_expand = memory[None, :, :, :].repeat(n_queries, 1, 1, 1)
         # memory_expand = memory_expand + relative_pos # n_queries, n_context, batch, channel
+        
+        # qk1 = (tgt2_expand - memory_expand + relative_pos).permute(2,0,1,3) # batch, n_q, n_c, channel
+        # qk1 = self.mlp_qk(qk1)
+        # qk1 = self._reshape_to_batches(qk1)
 
+        # v1 = memory_expand.permute(2,0,1,3) # batch, n_q, n_c, channel
+        # v1 = self.mlp_v(v1)
+        # v1 = self._reshape_to_batches(v1)
+
+
+        # attention = F.softmax(qk1/np.sqrt(channel), dim=-1)
+        # tgt = torch.sum(attention * v1, )
 
         sim = self.attn_mlp(tgt2_expand - memory_expand + relative_pos)
         # attn = sim.softmax(dim=1) # n_queries, n_context, batch, channel
         attn = F.softmax(sim/np.sqrt(sim.shape[-1]), dim=1)
 
 
-        tgt = torch.sum(memory_expand * attn, 1) # n_queries, batch, channel
+        v2 = self.v_mlp(memory_expand)
+        # tgt = torch.sum(v2 * attn, 1) # n_queries, batch, channel
+        tgt = torch.einsum('qcbf,qcbf->qbf', attn, v2)  # n_queries, batch, channel
+        tgt = self.out_mlp(tgt)
+        ###########################################################################################
 
         tgt = tgt + self.dropout2(tgt2)
         tgt2 = self.norm3(tgt)

@@ -208,7 +208,7 @@ class GeoFormerFS(nn.Module):
             dim_feedforward=cfg.dec_ffn_dim,
             dropout=cfg.dec_dropout,
             normalize_before=True,
-            use_rel=True,
+            use_rel=cfg.use_rel,
         )
 
         self.decoder = TransformerDecoder(
@@ -834,7 +834,7 @@ class GeoFormerFS(nn.Module):
         # Encode relative pos
         relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])
         n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
-        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, 3), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
+        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
         relative_embbeding_pos   = relative_embbeding_pos.permute(2,3,0,1)
 
         # num_layers x n_queries x batch x channel
