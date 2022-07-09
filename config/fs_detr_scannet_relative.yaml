@@ -29,7 +29,7 @@ DETR:
 
   filter_biases_wd: False
   weight_decay: 0.1
-  base_lr: 0.0002
+  base_lr: 0.0005
   warm_lr: 0.000001
   warm_lr_epochs: 1
   final_lr: 0.000001
@@ -61,7 +61,7 @@ STRUCTURE:
 
 TRAIN:
   start_epoch: 0
-  prepare_epochs: 10
+  prepare_epochs: 0
   epochs: 50
   num_workers: 8 # data loader workers
   optim: Adam # Adam or SGD
@@ -75,11 +75,12 @@ TRAIN:
 
   # fix_module: []
   fix_module: [input_conv, unet, output_layer, semantic, semantic_linear, 
-    # set_aggregator, pos_embedding, 
+    set_aggregator, pos_embedding, 
     # similarity_net,
     # mask_tower,
-    # encoder_to_decoder_projection, query_projection,
-    # decoder
+    # encoder_to_decoder_projection, 
+    query_projection,
+    decoder
   ]
 
 TEST:

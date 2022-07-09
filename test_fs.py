@@ -41,7 +41,7 @@ def load_set_support(model, dataset):
     #     set_support_vectors = torch.load(set_support_file)
     #     return set_support_vectors
 
-    os.makedirs(os.path.join('exp', cfg.file_support), exist_ok=True)
+    # os.makedirs(os.path.join('exp', cfg.file_support), exist_ok=True)
     logger.info(f"Generate support vectors and save to {set_support_file}")
     dataset.genSupportLoader()
     model.eval()
@@ -62,6 +62,11 @@ def load_set_support(model, dataset):
                         = dataset.load_single(support_scene_name, aug=False, permutate=False, val=True, support=True)
 
                     support_mask = (support_instance_label == support_instance_id).astype(int)
+
+                    # support_xyz_middle[support_mask.astype(bool)==False] = 0
+                    # # support_xyz_scaled = support_xyz_scaled[support_mask.astype(bool)]
+                    # support_rgb[support_mask.astype(bool)==False] = 0
+                    # # support_mask = np.ones((support_rgb.shape[0]), dtype=np.int)
 
                     support_batch_offsets   = torch.tensor([0, support_xyz_middle.shape[0]], dtype=torch.int)
                     support_masks_offset    = torch.tensor([0, np.count_nonzero(support_mask)], dtype=torch.int)  # int (B+1)
@@ -90,7 +95,7 @@ def load_set_support(model, dataset):
                 support_vector[cls] = mean_vector.cpu()
             set_support_vectors.append(support_vector)
 
-    torch.save(set_support_vectors, set_support_file)
+    # torch.save(set_support_vectors, set_support_file)
     logger.info("Finish create support vectors")
     return set_support_vectors
 
@@ -254,7 +259,8 @@ if __name__ == '__main__':
 
     if cfg.test_model == 'geoformer':
         # from model.geoformer.geoformer_fs import GeoFormerFS
-        from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
+        # from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
+        from model.geoformer.geoformer_fs_online_geo_onlysim import GeoFormerFS
         model = GeoFormerFS()
     elif cfg.test_model == 'dyco3d':
         from model.geoformer.dyco3d_fs import DyCo3dFS

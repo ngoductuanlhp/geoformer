@@ -16,7 +16,9 @@ import datetime
 import math
 
 from criterion_fs2 import FSInstSetCriterion
-from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
+# from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
+from model.geoformer.geoformer_fs_online_geo_onlysim import GeoFormerFS
+
 from datasets.scannetv2_fs_inst_onl import FSInstDataset
 
 from util.utils_scheduler import adjust_learning_rate, cosine_lr_after_step

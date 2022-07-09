@@ -31,7 +31,7 @@ include_directories($INCLUDE_PATH$)
 * Clone and compile the `spconv` library.
 ```
 cd lib/
-git clone https://github.com/llijiang/spconv.git -- recursive
+git clone https://github.com/llijiang/spconv.git --recursive
 cd spconv/
 python setup.py bdist_wheel
 ```

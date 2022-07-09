@@ -504,7 +504,7 @@ class FSInstDataset:
                 support_scene_name, support_instance_id = support_tuple[0], support_tuple[1]
 
                 support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                        = self.load_single(support_scene_name, aug=True, permutate=True, val=False, support=True)
+                        = self.load_single(support_scene_name, aug=False, permutate=False, val=False, support=True)
             
                 support_mask = (support_instance_label == support_instance_id)
 

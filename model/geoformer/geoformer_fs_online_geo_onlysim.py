@@ -225,8 +225,8 @@ class GeoFormerFS(nn.Module):
         )
 
         self.encoder_to_decoder_projection = GenericMLP(
-            input_dim=set_aggregate_dim_out*3,
-            hidden_dims=[set_aggregate_dim_out*3],
+            input_dim=set_aggregate_dim_out,
+            hidden_dims=[set_aggregate_dim_out],
             output_dim=cfg.dec_dim,
             norm_fn_name="bn1d",
             activation="relu",
@@ -817,10 +817,13 @@ class GeoFormerFS(nn.Module):
             
         context_embedding_pos = self.pos_embedding(context_locs, input_range=pc_dims)
 
-        context_feats = self.encoder_to_decoder_projection(
-            aggregation_tensor.permute(0, 2, 1)
-        ) # batch x channel x npoints
+        # context_feats = self.encoder_to_decoder_projection(
+        #     aggregation_tensor.permute(0, 2, 1)
+        # ) # batch x channel x npoints
         
+        context_feats = self.encoder_to_decoder_projection(
+            context_feats.permute(0, 2, 1)
+        ) # batch x channel x npoints
 
         ''' Init dec_inputs by query features '''
         context_feats_T = context_feats.transpose(1,2) # batch x npoints x channel 

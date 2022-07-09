@@ -225,8 +225,8 @@ class GeoFormerFS(nn.Module):
         )
 
         self.encoder_to_decoder_projection = GenericMLP(
-            input_dim=set_aggregate_dim_out*3,
-            hidden_dims=[set_aggregate_dim_out*3],
+            input_dim=set_aggregate_dim_out,
+            hidden_dims=[set_aggregate_dim_out],
             output_dim=cfg.dec_dim,
             norm_fn_name="bn1d",
             activation="relu",
@@ -766,61 +766,12 @@ class GeoFormerFS(nn.Module):
         context_mask_tower = torch.no_grad if 'mask_tower' in self.fix_module else torch.enable_grad
         with context_mask_tower():
             mask_features_   = self.mask_tower(torch.unsqueeze(output_feats_, dim=2).permute(2,1,0)).permute(2,1,0)
-        
-        ''' channel-wise correlate '''
-        channel_wise_tensor = context_feats * support_embeddings.unsqueeze(1).repeat(1,cfg.n_decode_point,1)
-        subtraction_tensor = context_feats - support_embeddings.unsqueeze(1).repeat(1,cfg.n_decode_point,1)
-        aggregation_tensor = torch.cat([channel_wise_tensor, subtraction_tensor, context_feats], dim=2) # batch * n_sampling *(3*channel)
-        
-        aggregation_tensor_sampled  = [torch.gather(aggregation_tensor[..., x], 1, query_sampling_inds) for x in range(aggregation_tensor.shape[-1])]
-        aggregation_tensor_sampled  = torch.stack(aggregation_tensor_sampled) # channel x batch x n_sampling
-        aggregation_tensor_sampled  = aggregation_tensor_sampled.permute(1,2,0) # batch x n_sampling x channel
-
-        similarity_score = self.similarity_net(aggregation_tensor_sampled.flatten(0,1)).squeeze(-1).reshape(batch_size, aggregation_tensor_sampled.shape[1]) # batch  x n_sampling
-        
-        if not training:
-            fps_sampling_inds3 = []
-            similarity_score_filter = []
-            for b in range(batch_size):
-                scene_candidate_inds = torch.nonzero((similarity_score[b,...].sigmoid() >= cfg.similarity_thresh))
-                # print(scene_candidate_inds)
-                fps_sampling_b = query_sampling_inds[b][scene_candidate_inds.long()].squeeze(-1)
-                # print('fps_sampling_b', fps_sampling_b.shape)
-                fps_sampling_inds3.append(fps_sampling_b)
-                similarity_score_filter.append(similarity_score[b, scene_candidate_inds].sigmoid().squeeze(-1))
-            query_sampling_inds = torch.stack(fps_sampling_inds3)
-            similarity_score_filter = torch.stack(similarity_score_filter)
-            # print('before/after: ', similarity_score.shape, similarity_score_filter.shape)
-            if query_sampling_inds.shape[1] == 0:
-                outputs['proposal_scores']  = None
-                return outputs
-
-            
-            query_locs = [torch.gather(query_locs[..., x], 1, query_sampling_inds) for x in range(3)]
-            query_locs = torch.stack(query_locs)
-            query_locs = query_locs.permute(1, 2, 0)
-            
-            query_embedding_pos_T = query_embedding_pos.transpose(1,2)
-            query_embedding_pos_T = [torch.gather(query_embedding_pos_T[..., x], 1, query_sampling_inds) for x in range(query_embedding_pos_T.shape[-1])]
-            query_embedding_pos_T = torch.stack(query_embedding_pos_T)
-            query_embedding_pos = query_embedding_pos_T.permute(1, 0, 2)
-
-            geo_dist_arr_filtered = []
-            for b in range(batch_size):
-                query_sampling_inds_b = query_sampling_inds[b]
-                geo_dist= geo_dist_arr[b]
-
-                geo_dist = geo_dist[query_sampling_inds_b, :]
-                geo_dist_arr_filtered.append(geo_dist)
-            geo_dist_arr = geo_dist_arr_filtered
-
-            
+         
         context_embedding_pos = self.pos_embedding(context_locs, input_range=pc_dims)
-
-        context_feats = self.encoder_to_decoder_projection(
-            aggregation_tensor.permute(0, 2, 1)
-        ) # batch x channel x npoints
         
+        context_feats = self.encoder_to_decoder_projection(
+            context_feats.permute(0, 2, 1)
+        ) # batch x channel x npoints
 
         ''' Init dec_inputs by query features '''
         context_feats_T = context_feats.transpose(1,2) # batch x npoints x channel 
@@ -858,6 +809,71 @@ class GeoFormerFS(nn.Module):
 
         mask_predictions = self.get_mask_prediction(geo_dist_arr, dec_outputs, mask_features_, locs_float_, query_locs, batch_offsets_)
 
+        mask_logit_final = mask_predictions[-1]['mask_logits'] #.reshape(batch_size, cfg.n_query_points, -1) # batch x n_queries x N_mask
+
+        final_mask_features_arr = []
+        for b in range(batch_size):
+            start = batch_offsets_[b]
+            end = batch_offsets_[b+1]
+            output_feats_b = output_feats_[start:end, :] # n_mask, f
+            
+
+            mask_logit_final_b = mask_logit_final[b]
+            mask_logit_final_bool = (mask_logit_final_b >= 0.2) # n_queries, mask
+
+            count_mask = torch.sum(mask_logit_final_bool, dim=0).float()
+
+            output_feats_b_expand = output_feats_b[None, ...].reapeat(count_mask.shape[0], 1, 1) # n_queries, mask, f
+
+
+            final_mask_features = torch.sum((output_feats_b_expand * mask_logit_final_bool[:, :, None]), dim=1) # n_queries, f
+            final_mask_features = final_mask_features / count_mask
+
+            final_mask_features_arr.append(final_mask_features)
+        final_mask_features_arr = torch.stack(final_mask_features_arr, dim=0) # batch, n_queries, f
+
+        ''' channel-wise correlate '''
+        channel_wise_tensor = final_mask_features_arr * support_embeddings.unsqueeze(1).repeat(1,query_sampling_inds.shape[0],1)
+        subtraction_tensor = final_mask_features_arr - support_embeddings.unsqueeze(1).repeat(1,query_sampling_inds.shape[0],1)
+        aggregation_tensor = torch.cat([channel_wise_tensor, subtraction_tensor, final_mask_features_arr], dim=2) # batch * n_sampling *(3*channel)
+
+        similarity_score = self.similarity_net(aggregation_tensor.flatten(0,1)).squeeze(-1).reshape(batch_size, aggregation_tensor.shape[1]) # batch  x n_sampling
+        
+        if not training:
+            fps_sampling_inds3 = []
+            similarity_score_filter = []
+            for b in range(batch_size):
+                scene_candidate_inds = torch.nonzero((similarity_score[b,...].sigmoid() >= cfg.similarity_thresh))
+                # print(scene_candidate_inds)
+                fps_sampling_b = query_sampling_inds[b][scene_candidate_inds.long()].squeeze(-1)
+                # print('fps_sampling_b', fps_sampling_b.shape)
+                fps_sampling_inds3.append(fps_sampling_b)
+                similarity_score_filter.append(similarity_score[b, scene_candidate_inds].sigmoid().squeeze(-1))
+            query_sampling_inds = torch.stack(fps_sampling_inds3)
+            similarity_score_filter = torch.stack(similarity_score_filter)
+            # print('before/after: ', similarity_score.shape, similarity_score_filter.shape)
+            if query_sampling_inds.shape[1] == 0:
+                outputs['proposal_scores']  = None
+                return outputs
+
+            
+            query_locs = [torch.gather(query_locs[..., x], 1, query_sampling_inds) for x in range(3)]
+            query_locs = torch.stack(query_locs)
+            query_locs = query_locs.permute(1, 2, 0)
+            
+            query_embedding_pos_T = query_embedding_pos.transpose(1,2)
+            query_embedding_pos_T = [torch.gather(query_embedding_pos_T[..., x], 1, query_sampling_inds) for x in range(query_embedding_pos_T.shape[-1])]
+            query_embedding_pos_T = torch.stack(query_embedding_pos_T)
+            query_embedding_pos = query_embedding_pos_T.permute(1, 0, 2)
+
+            geo_dist_arr_filtered = []
+            for b in range(batch_size):
+                query_sampling_inds_b = query_sampling_inds[b]
+                geo_dist= geo_dist_arr[b]
+
+                geo_dist = geo_dist[query_sampling_inds_b, :]
+                geo_dist_arr_filtered.append(geo_dist)
+            geo_dist_arr = geo_dist_arr_filtered
         
         if training:
             outputs['fg_idxs']              = fg_idxs
@@ -868,8 +884,7 @@ class GeoFormerFS(nn.Module):
             outputs['mask_predictions']     = mask_predictions
         
         if not training:
-            mask_prediction_last_layer = mask_predictions[-1]
-            mask_logit_final = mask_prediction_last_layer['mask_logits'] #.reshape(batch_size, cfg.n_query_points, -1) # batch x n_queries x N_mask
+            
             # cls_logit_final = mask_prediction_last_layer['cls_logits'] #.reshape(batch_size, cfg.n_query_points, -1) # batch x n_queries x n_classes
             proposal_idx, proposal_len, scores, seg_preds = self.generate_proposal(geo_dist_arr, mask_logit_final, similarity_score_filter, fg_idxs, batch_offsets, 
                                                 threshold=0.2, min_pts_num=100)

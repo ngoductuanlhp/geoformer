@@ -173,8 +173,7 @@ class FSInstSetCriterion(nn.Module):
 
         loss_pos = loss_all * train_label
 
-        # print('loss_pos', loss_all.shape)
-        print("Positive/negative:", train_label.sum(), n_hard_negatives.sum())
+        print("Positive/negative samples of SimLoss:", train_label.sum().detach().item(), n_hard_negatives.sum().detach().item())
         loss_neg[train_label.long()] = 0
         # loss_neg = loss_neg * (1-train_label.long())
         # print('loss_neg', loss_neg.shape)
