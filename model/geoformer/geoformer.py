@@ -33,12 +33,12 @@ class GeoFormer(nn.Module):
         super().__init__()
 
         input_c = cfg.input_channel
+        if cfg.use_coords:
+            input_c += 3
+
         m = cfg.m
 
         classes = cfg.classes
-
-        block_reps = cfg.block_reps
-        block_residual = cfg.block_residual
 
         self.prepare_epochs = cfg.prepare_epochs
 
@@ -46,19 +46,11 @@ class GeoFormer(nn.Module):
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
-        if block_residual:
-            block = ResidualBlock
-        else:
-            block = VGGBlock
-
-        if cfg.use_coords:
-            input_c += 3
-
         #### backbone
         self.input_conv = spconv.SparseSequential(
             spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )
-        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, block_reps, block, use_backbone_transformer=True, indice_key_id=1)
+        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, 2, ResidualBlock, use_backbone_transformer=True, indice_key_id=1)
         self.output_layer = spconv.SparseSequential(
             norm_fn(m),
             nn.ReLU()
@@ -190,15 +182,6 @@ class GeoFormer(nn.Module):
         )
 
         self.apply(self.set_bn_init)
-
-        self.threshold_ins = cfg.threshold_ins
-        self.min_pts_num = cfg.min_pts_num
-        #### fix parameter
-        # self.module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
-        #               'semantic': self.semantic, 'semantic_linear': self.semantic_linear,
-        #             #   'offset': self.offset, 'offset_linear': self.offset_linear,
-        #               'mask_tower': self.mask_tower
-        #               }
 
         for mod_name in self.fix_module:
             mod = getattr(self, mod_name)
@@ -461,12 +444,14 @@ class GeoFormer(nn.Module):
 
     def forward(self, batch_input, epoch, training=True):
         outputs = {}
-        batch_size = cfg.batch_size if training else 1
 
         batch_idxs  = batch_input['locs'][:, 0].int()
         p2v_map     = batch_input['p2v_map']
         locs_float  = batch_input['locs_float']
         batch_offsets = batch_input['offsets']
+
+        batch_size  = len(batch_offsets) - 1
+        assert batch_size > 0
 
         pc_dims = [
             batch_input["pc_maxs"],
@@ -475,23 +460,8 @@ class GeoFormer(nn.Module):
 
         N_points = locs_float.shape[0]
 
-        context_mbackbone = torch.no_grad if ('unet' in self.fix_module) and ('semantic' in self.fix_module) else torch.enable_grad
-        with context_mbackbone():
-            sparse_input = self.preprocess_input(batch_input)
-
-            ''' Backbone net '''
-            output = self.input_conv(sparse_input)
-            output = self.unet(output)
-            output = self.output_layer(output)
-            output_feats = output.features[p2v_map.long()]
-            output_feats = output_feats.contiguous()
-
-            ''' Semantic head'''
-            semantic_feats  = self.semantic(output_feats)
-            semantic_scores = self.semantic_linear(semantic_feats)   # (N, nClass), float
-            semantic_preds  = semantic_scores.max(1)[1]    # (N), long
-
-            outputs['semantic_scores'] = semantic_scores
+        output_feats, semantic_scores, semantic_preds = self.forward_backbone(batch_input, p2v_map, batch_size)
+        outputs['semantic_scores'] = semantic_scores
 
         if epoch <= self.prepare_epochs:
             return outputs
@@ -551,10 +521,11 @@ class GeoFormer(nn.Module):
         context_locs = torch.cat(context_locs)
         context_feats = torch.cat(context_feats) # batch x npoint x channel
 
-        context_embedding_pos = self.pos_embedding(context_locs, input_range=pc_dims)
+
+        query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding(context_locs, pc_dims, cfg.n_query_points)
+
 
         # query_embedding_xyz: batch x n_queries x 3
-        query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding(context_locs, pc_dims, cfg.n_query_points)
         
         # original_queries_inds = fg_idxs[sampling_indices[fps_sampling_inds.flatten()[fps_sampling_inds2.flatten()]].flatten()]
         # # sampling_indices[fps_sampling_inds.flatten()[fps_sampling_inds2.flatten()]].cpu()
@@ -563,39 +534,9 @@ class GeoFormer(nn.Module):
         # vis_queries_inds[original_queries_inds] = 1
         # outputs['vis_queries_inds'] = vis_queries_inds
 
-        context_feats = self.encoder_to_decoder_projection(
-            context_feats.permute(0, 2, 1)
-        ) # batch x channel x npoints
+        # NOTE transformer decoder
+        dec_outputs = self.forward_decoder(context_locs, query_locs, query_embedding_pos, context_feats, query_sampling_inds, pc_dims)
 
-        ''' Init dec_inputs by query features '''
-        context_feats_T = context_feats.transpose(1,2) # batch x npoints x channel 
-        dec_inputs      = [torch.gather(context_feats_T[..., x], 1, query_sampling_inds) for x in range(context_feats_T.shape[-1])]
-        dec_inputs      = torch.stack(dec_inputs) # channel x batch x npoints
-
-        # support_embeddings = support_embeddings.permute(0,2,1)
-        # dec_inputs      = (dec_inputs.permute(1,2,0) * support_embeddings).permute(1,0,2)
-        dec_inputs      = dec_inputs.permute(2,1,0) # npoints x batch x channel
-
-        # decoder expects: npoints x batch x channel
-        context_embedding_pos   = context_embedding_pos.permute(2, 0, 1)
-        context_feats           = context_feats.permute(2, 0, 1)
-        query_embedding_pos     = query_embedding_pos.permute(2, 0, 1)
-
-        # Encode relative pos
-        relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])
-        n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
-        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
-        relative_embbeding_pos   = relative_embbeding_pos.permute(2,3,0,1)
-
-        # print('relative_embbeding_pos', relative_embbeding_pos.shape)
-        # num_layers x n_queries x batch x channel
-        dec_outputs = self.decoder(
-            dec_inputs, 
-            context_feats, 
-            pos=context_embedding_pos, 
-            query_pos=query_embedding_pos,
-            relative_pos=relative_embbeding_pos
-        )
 
         if not training:
             dec_outputs = dec_outputs[-1:,...]
@@ -630,3 +571,58 @@ class GeoFormer(nn.Module):
                                                 min_pts_num=50)
             outputs['proposal_scores'] = (scores, proposal_idx, proposal_len, seg_preds)
         return outputs
+
+    def forward_backbone(self, scene_dict, p2v_map, batch_size):
+        context_backbone = torch.no_grad if 'unet' in self.fix_module else torch.enable_grad
+        with context_backbone():
+            sparse_input = self.preprocess_input(scene_dict, batch_size)
+
+            ''' Backbone net '''
+            output = self.input_conv(sparse_input)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[p2v_map.long()]
+            output_feats = output_feats.contiguous()
+
+            ''' Semantic head'''
+            semantic_feats  = self.semantic(output_feats)
+            semantic_scores = self.semantic_linear(semantic_feats)   # (N, nClass), float
+            semantic_preds  = semantic_scores.max(1)[1]    # (N), long
+
+            return output_feats, semantic_scores, semantic_preds
+
+    def forward_decoder(self, context_locs, query_locs, query_embedding_pos, aggregation_tensor, query_sampling_inds, pc_dims):
+        batch_size = context_locs.shape[0]
+        context_embedding_pos = self.pos_embedding(context_locs, input_range=pc_dims)
+        
+        context_feats = self.encoder_to_decoder_projection(
+            aggregation_tensor.permute(0, 2, 1)
+        ) # batch x channel x npoints
+
+        ''' Init dec_inputs by query features '''
+        context_feats_T = context_feats.transpose(1,2) # batch x npoints x channel 
+        dec_inputs      = [torch.gather(context_feats_T[..., x], 1, query_sampling_inds) for x in range(context_feats_T.shape[-1])]
+        dec_inputs      = torch.stack(dec_inputs) # channel x batch x npoints
+        dec_inputs      = dec_inputs.permute(2,1,0) # npoints x batch x channel
+
+        # decoder expects: npoints x batch x channel
+        context_embedding_pos   = context_embedding_pos.permute(2, 0, 1)
+        context_feats           = context_feats.permute(2, 0, 1)
+        query_embedding_pos     = query_embedding_pos.permute(2, 0, 1)
+
+        # Encode relative pos
+        relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])
+        n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
+        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
+        relative_embbeding_pos   = relative_embbeding_pos.permute(2,3,0,1)
+
+        # num_layers x n_queries x batch x channel
+        dec_outputs = self.decoder(
+            tgt=dec_inputs, 
+            memory=context_feats, 
+            pos=context_embedding_pos, 
+            query_pos=query_embedding_pos,
+            relative_pos=relative_embbeding_pos
+        )
+
+        return dec_outputs

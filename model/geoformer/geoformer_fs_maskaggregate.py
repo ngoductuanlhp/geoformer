@@ -655,7 +655,7 @@ class GeoFormerFS(nn.Module):
         locs_float  = scene_dict['locs_float']
         batch_offsets = scene_dict['batch_offsets']
 
-        batch_size  = len(scene_dict['batch_offsets']) - 1
+        batch_size  = len(batch_offsets) - 1
         assert batch_size > 0
 
         pc_dims = [
