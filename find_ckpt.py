@@ -154,22 +154,16 @@ def do_test(model, dataset):
 
                     if outputs['proposal_scores'] is None:
                         continue
-                    scores, proposals_idx, proposals_offset, seg_preds = outputs['proposal_scores']
-                    if isinstance(scores, list):
+                    scores_pred, proposals_pred = outputs['proposal_scores']
+                    if isinstance(scores_pred, list):
                         continue
 
-                    scores_pred = scores
-
-                    proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
-                    proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
+                    # proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
+                    # proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
 
                     benchmark_label = cfg.BENCHMARK_SEMANTIC_LABELS[label]
                     cluster_semantic = torch.ones((proposals_pred.shape[0], 1)) * benchmark_label
 
-                    # score_mask = (scores_pred > cfg.TEST_SCORE_THRESH)
-                    # scores_pred = scores_pred[score_mask]
-                    # proposals_pred = proposals_pred[score_mask]
-                    # cluster_semantic = cluster_semantic[score_mask]
 
                     clusters[k].append(proposals_pred)
                     cluster_scores[k].append(scores_pred)
@@ -269,8 +263,8 @@ if __name__ == '__main__':
     logger.info('# parameters (model): {}'.format(sum([x.nelement() for x in model.parameters()])))
 
     best_metric = -1
-    for epoch in range(10, 52, 4):
-        checkpoint_fn = f'exp/finetune_fs_detr_relative_maskfinal_normalsimnet/checkpoint_epoch_{epoch}.pth'
+    for epoch in range(28, 44, 2):
+        checkpoint_fn = f'exp/finetune_fs_detr_relative_maskfinal_normalsimnet_small_cosin/checkpoint_epoch_{epoch}.pth'
         if os.path.isfile(checkpoint_fn):
             logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
             state = torch.load(checkpoint_fn)

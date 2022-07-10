@@ -93,7 +93,7 @@ class FSInstDataset:
             train_set,
             shuffle=False,
             batch_size=1,
-            num_workers=0,
+            num_workers=4,
             drop_last=False,
             pin_memory=True,
             collate_fn=self.extractMergeFS
@@ -328,9 +328,10 @@ class FSInstDataset:
 
     def load_single(self, scene_name, aug=True, permutate=True, val=False, support=False):
         data = np.load(os.path.join(self.data_root, self.dataset, 'scenes', '%s.npy' %scene_name))
-        if permutate:
-            random_idx = np.random.permutation(data.shape[0])
-            data = data[random_idx]
+
+        # if permutate:
+        #     random_idx = np.random.permutation(data.shape[0])
+        #     data = data[random_idx]
 
         xyz_origin = data[:, :3]
         rgb = data[:, 3:6]
@@ -339,7 +340,7 @@ class FSInstDataset:
 
         ### jitter / flip x / rotation
         if aug:
-            xyz_middle = self.dataAugment(xyz_origin, True, True, True)
+            xyz_middle = self.dataAugment(xyz_origin, False, True, True)
         else:
             xyz_middle = xyz_origin
 
@@ -347,9 +348,9 @@ class FSInstDataset:
         xyz = xyz_middle * self.scale
 
         ### elastic
-        if aug:
-            xyz = self.elastic(xyz, 6 * self.scale // 50, 40 * self.scale / 50)
-            xyz = self.elastic(xyz, 20 * self.scale // 50, 160 * self.scale / 50)
+        # if aug:
+        #     xyz = self.elastic(xyz, 6 * self.scale // 50, 40 * self.scale / 50)
+        #     xyz = self.elastic(xyz, 20 * self.scale // 50, 160 * self.scale / 50)
 
         ### offset
         xyz -= xyz.min(0)
@@ -509,7 +510,7 @@ class FSInstDataset:
                 support_scene_name, support_instance_id = support_tuple[0], support_tuple[1]
 
                 support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
-                        = self.load_single(support_scene_name, aug=True, permutate=True, val=False, support=True)
+                        = self.load_single(support_scene_name, aug=False, permutate=False, val=False, support=True)
             
                 support_mask = (support_instance_label == support_instance_id)
 
@@ -558,7 +559,6 @@ class FSInstDataset:
         query_instance_pointnum = torch.tensor(query_instance_pointnum, dtype=torch.int)  # int (total_nInst)                     # long (N)
         # query_spatial_shape = np.clip((query_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale[0], None)
         query_spatial_shape = np.array([1024, 1024, 1024])
-        # query_spatial_shape = np.array([768, 768, 768])
         
         ### voxelize
         query_voxel_locs, query_p2v_map, query_v2p_map = pointgroup_ops.voxelization_idx(query_locs, self.batch_size, self.mode)

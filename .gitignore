@@ -69,6 +69,9 @@ data/scannetv2/scenes/
 data/scannetv2/geo/
 data/scannetv2/val_gt
 data/scannetv2/val_gt/
+data/scannetv2/geoformer_stuff/
+data/scannetv2/geoformer_geodist/
+
 lib/spconv
 
 exp/

@@ -22,21 +22,22 @@ from checkpoint import checkpoint
 import datetime
 import math
 
-from model.geoformer.geoformer_fs import GeoFormerFS
+# from model.geoformer.geoformer_fs import GeoFormerFS
+from model.geoformer.geoformer_fs_maskaggregate import GeoFormerFS
 from datasets.scannetv2_fs_inst import FSInstDataset
 
 from util.dataloader_util import synchronize, get_rank
 
 
 def init():
-    # os.makedirs(cfg.exp_path, exist_ok=True)
-    # log the config
     global logger
     logger = create_logger()
     logger.info(cfg)
-    # summary writer
-    # global writer
-    # writer = SummaryWriter(cfg.exp_path)
+
+    random.seed(cfg.test_seed)
+    np.random.seed(cfg.test_seed)
+    torch.manual_seed(cfg.test_seed)
+    torch.cuda.manual_seed_all(cfg.test_seed)
 
 def extract(
         train_loader, 
@@ -44,53 +45,40 @@ def extract(
         fold=0
     ):
 
-    data_time = utils.AverageMeter()
 
     model.eval()
     net_device = next(model.parameters()).device
     
-    end_time = time.time()
 
     print('len dataloader', len(train_loader))
-    for iteration, batch in enumerate(train_loader):
 
-        data_time.update(time.time() - end_time)
-        torch.cuda.empty_cache()
+    with torch.no_grad():
+        for iteration, batch in enumerate(train_loader):
 
-        support_dict, query_dict, scene_infos = batch
+            torch.cuda.empty_cache()
 
-        for key in query_dict:
-            if torch.is_tensor(query_dict[key]):
-                query_dict[key] = query_dict[key].to(net_device)
+            support_dict, query_dict, scene_infos = batch
 
-        _ = model.forward_extract(query_dict, scene_infos, fold=fold)
+            for key in query_dict:
+                if torch.is_tensor(query_dict[key]):
+                    query_dict[key] = query_dict[key].to(net_device)
+
+            _ = model.forward_extract(query_dict, scene_infos, fold=fold)
 
     import pickle
     if fold == 0:
-        save_path = 'data/scannetv2/scene_graph_info_train.pkl'
+        save_path = 'data/scannetv2/geoformer_scene_info_train.pkl'
     else:
-        save_path = 'data/scannetv2/scene_graph_info_test.pkl'
+        save_path = 'data/scannetv2/geoformer_scene_info_val.pkl'
 
     with open(save_path, 'wb') as handle:
         pickle.dump(model.save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    print('Total saved scenes:', len(model.save_dict.keys()))
+    print('Total saved scenes:', len(model.save_dict.keys()), len(train_loader))
     print('Save to', save_path)
 
 if __name__ == '__main__':
     ##### init
     init()
-
-     ###
-    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
-    local_rank = 0
-    torch.cuda.set_device(local_rank)
-    np.random.seed(cfg.manual_seed + get_rank())
-    torch.manual_seed(cfg.manual_seed + get_rank())
-    use_cuda = torch.cuda.is_available()
-    logger.info('cuda available: {}'.format(use_cuda))
-    assert use_cuda
-    if use_cuda:
-        torch.cuda.manual_seed_all(cfg.manual_seed + get_rank())
 
     ##### model
     logger.info('=> creating model ...')
@@ -121,7 +109,8 @@ if __name__ == '__main__':
 
     extract(
         loader, 
-        model
+        model,
+        fold=0
     )
 
     print("Extract Testing graph")

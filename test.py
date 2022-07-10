@@ -61,66 +61,37 @@ def do_test(model, dataloader, cur_epoch):
 
             outputs = model(batch_input, cur_epoch, training=False)
 
-
-            ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
-            semantic_scores = outputs['semantic_scores']  # (N, nClass=20) float32, cuda
-            semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
-
-
             if (cur_epoch > cfg.prepare_epochs):
                 if 'proposal_scores' not in outputs.keys():
                     continue
-                scores, proposals_idx, proposals_offset, seg_preds = outputs['proposal_scores']   # (nProposal, 1) float, cuda
-                if(isinstance(scores, list)):
-                    continue
-                # scores_pred = torch.sigmoid(scores.view(-1))
-                scores_pred = scores.view(-1)
-                # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-                # proposals_offset: (nProposal + 1), int, cpu
-                proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
-                proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
 
-                semantic_test = FOLD1 if cfg.cvfold == 1 else FOLD0
+                cls_final, scores_final, masks_final = outputs['proposal_scores']   # (nProposal, 1) float, cuda
+                if(isinstance(cls_final, list)):
+                    continue
+
+                
+
+                SEMANTIC_FOLD = FOLD1 if cfg.cvfold == 1 else FOLD0
 
                 # print(semantic_test)
-                temp = torch.tensor(semantic_test, device=scores_pred.device)[seg_preds-4]
+                temp = torch.tensor(SEMANTIC_FOLD, device=scores_final.device)[cls_final-4]
                 # temp = torch.tensor(semantic_test, device=scores_pred.device)[semantic_pred[proposals_idx[:, 1][proposals_offset[:-1].long()].long()] - 4]
-                semantic_id = torch.tensor(BENCHMARK_SEMANTIC_LABELS, device=scores_pred.device)[temp] # (nProposal), long
+                semantic_id = torch.tensor(BENCHMARK_SEMANTIC_LABELS, device=scores_final.device)[temp] # (nProposal), long
 
-                for proposal_id in range(proposals_pred.shape[0]):
-                    sem_cls_score = semantic_scores[(proposals_pred[proposal_id,:] > 0)][:, seg_preds[proposal_id]]
-                    # [seg_preds[proposal_id]]
-                    # print('sem_cls_score', sem_cls_score.shape)
-                    sem_cls_score_mean = sem_cls_score.mean()
-                    # print('sem_cls_score_mean', sem_cls_score_mean)
-                    scores_pred[proposal_id] = scores_pred[proposal_id] * sem_cls_score_mean
-
-                ##### score threshold
-                score_mask = (scores_pred > cfg.TEST_SCORE_THRESH)
-                scores_pred = scores_pred[score_mask]
-                proposals_pred = proposals_pred[score_mask]
-                semantic_id = semantic_id[score_mask]
-
-                ##### npoint threshold
-                proposals_pointnum = proposals_pred.sum(1)
-                npoint_mask = (proposals_pointnum > cfg.TEST_NPOINT_THRESH)
-                scores_pred = scores_pred[npoint_mask]
-                proposals_pred = proposals_pred[npoint_mask]
-                semantic_id = semantic_id[npoint_mask]
 
                 ##### nms
                 if semantic_id.shape[0] == 0:
                     pick_idxs = np.empty(0)
                 else:
-                    proposals_pred_f = proposals_pred.float()  # (nProposal, N), float, cuda
+                    proposals_pred_f = masks_final.float()  # (nProposal, N), float, cuda
                     intersection = torch.mm(proposals_pred_f, proposals_pred_f.t())  # (nProposal, nProposal), float, cuda
                     proposals_pointnum = proposals_pred_f.sum(1)  # (nProposal), float, cuda
                     proposals_pn_h = proposals_pointnum.unsqueeze(-1).repeat(1, proposals_pointnum.shape[0])
                     proposals_pn_v = proposals_pointnum.unsqueeze(0).repeat(proposals_pointnum.shape[0], 1)
                     cross_ious = intersection / (proposals_pn_h + proposals_pn_v - intersection)
-                    pick_idxs = non_max_suppression(cross_ious.cpu().numpy(), scores_pred.cpu().numpy(), cfg.TEST_NMS_THRESH)  # int, (nCluster, N)
-                clusters = proposals_pred[pick_idxs]
-                cluster_scores = scores_pred[pick_idxs]
+                    pick_idxs = non_max_suppression(cross_ious.cpu().numpy(), scores_final.cpu().numpy(), cfg.TEST_NMS_THRESH)  # int, (nCluster, N)
+                clusters = masks_final[pick_idxs]
+                cluster_scores = scores_final[pick_idxs]
                 cluster_semantic_id = semantic_id[pick_idxs]
 
                 nclusters = clusters.shape[0]
