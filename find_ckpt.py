@@ -129,7 +129,7 @@ def do_test(model, dataset):
             test_scene_name = scene_infos['query_scene']
             active_label    = scene_infos['active_label']
             # logger.info("Test scene: {} {}/{}| Active classes: {}".format(test_scene_name, i, num_test_scenes, active_label))
-            logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes))
+            # logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes))
 
             N = query_dict['feats'].shape[0]
 
@@ -216,20 +216,21 @@ def do_test(model, dataset):
                     matches[k][test_scene_name]['pred'] = pred2gt
 
             overlap_time = time.time() - start_time
-            logger.info(f'Elapsed time: {int(overlap_time)}s | Remained time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s')
-            logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
+            # logger.info(f'Elapsed time: {int(overlap_time)}s | Remained time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s')
+            # logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
         ##### evaluation
         if cfg.eval:
             run_dict = {}
             for k in range(cfg.run_num):
                 ap_scores = eval.evaluate_matches(matches[k])
                 avgs = eval.compute_averages(ap_scores)
-                eval.print_results(avgs, logger)
+                # eval.print_results(avgs, logger)
                 run_dict = eval.accumulate_averages_over_runs(run_dict, avgs)
 
             run_dict = eval.compute_averages_over_runs(run_dict)
             eval.print_results(run_dict, logger)
 
+        return run_dict["all_ap"]
 
 def non_max_suppression(ious, scores, threshold):
     ixs = scores.argsort()[::-1]
@@ -267,26 +268,31 @@ if __name__ == '__main__':
 
     logger.info('# parameters (model): {}'.format(sum([x.nelement() for x in model.parameters()])))
 
-    checkpoint_fn = cfg.resume
-    if os.path.isfile(checkpoint_fn):
-        logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
-        state = torch.load(checkpoint_fn)
-        model_state_dict = model.state_dict()
-        loaded_state_dict = strip_prefix_if_present(state['state_dict'], prefix="module.")
-        align_and_update_state_dicts(model_state_dict, loaded_state_dict)
-        model.load_state_dict(model_state_dict)
+    best_metric = -1
+    for epoch in range(10, 52, 4):
+        checkpoint_fn = f'exp/finetune_fs_detr_relative_maskfinal_normalsimnet/checkpoint_epoch_{epoch}.pth'
+        if os.path.isfile(checkpoint_fn):
+            logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
+            state = torch.load(checkpoint_fn)
+            model_state_dict = model.state_dict()
+            loaded_state_dict = strip_prefix_if_present(state['state_dict'], prefix="module.")
+            align_and_update_state_dicts(model_state_dict, loaded_state_dict)
+            model.load_state_dict(model_state_dict)
 
-        logger.info("=> loaded checkpoint '{}')".format(checkpoint_fn))
-    else:
-        raise RuntimeError
-
-
-    dataset = FSInstDataset(split_set='val')
-
+            logger.info("=> loaded checkpoint '{}')".format(checkpoint_fn))
+        else:
+            raise RuntimeError
 
 
-    ##### evaluate
-    do_test(
-        model,
-        dataset,
-    )
+        dataset = FSInstDataset(split_set='val')
+
+
+
+        ##### evaluate
+        metric = do_test(
+            model,
+            dataset,
+        )
+        if metric > best_metric:
+            best_metric = metric
+            print(f'best metric at epoch {epoch}: {best_metric}')

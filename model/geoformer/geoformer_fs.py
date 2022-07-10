@@ -643,7 +643,6 @@ class GeoFormerFS(nn.Module):
                 similarity_score_filter.append(similarity_score[b, scene_candidate_inds].sigmoid().squeeze(-1))
             query_sampling_inds = torch.stack(fps_sampling_inds3)
             similarity_score_filter = torch.stack(similarity_score_filter)
-            # print('before/after: ', similarity_score.shape, similarity_score_filter.shape)
             if query_sampling_inds.shape[1] == 0:
                 outputs['proposal_scores']  = None
                 return outputs

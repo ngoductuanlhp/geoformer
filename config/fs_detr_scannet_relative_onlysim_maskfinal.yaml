@@ -78,7 +78,7 @@ TRAIN:
     set_aggregator, pos_embedding, 
     # similarity_net,
     # mask_tower, controller,
-    encoder_to_decoder_projection, 
+    # encoder_to_decoder_projection, 
     query_projection,
     decoder
   ]

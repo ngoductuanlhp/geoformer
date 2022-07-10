@@ -115,7 +115,7 @@ class GeoFormerFS(nn.Module):
         self.input_conv = spconv.SparseSequential(
             spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )
-        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, block_reps, block, use_backbone_transformer=cfg.use_backbone_transformer, indice_key_id=1)
+        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, block_reps, block, use_backbone_transformer=True, indice_key_id=1)
         self.output_layer = spconv.SparseSequential(
             norm_fn(m),
             nn.ReLU()

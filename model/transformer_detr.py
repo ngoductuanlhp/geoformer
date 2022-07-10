@@ -436,8 +436,13 @@ class TransformerDecoderLayer(nn.Module):
                 nn.ReLU(),
                 nn.Linear(d_model, d_model),
             )
-            self.v_mlp = nn.Linear(d_model, d_model)
-            self.out_mlp = nn.Linear(d_model, d_model)
+            self.v_mlp = nn.Sequential(
+                nn.Linear(d_model, d_model),
+            )
+            self.out_mlp = nn.Sequential(
+                nn.Linear(d_model, d_model),
+                nn.ReLU(),
+            )
             # self.linear_q = nn.Linear(d_model, d_model, True)
             # self.linear_k = nn.Linear(d_model, d_model, True)
             # self.linear_v = nn.Linear(d_model, d_model, True)
@@ -564,7 +569,7 @@ class TransformerDecoderLayer(nn.Module):
         attn = F.softmax(sim/np.sqrt(sim.shape[-1]), dim=1)
 
 
-        v2 = self.v_mlp(memory_expand)
+        v2 = self.v_mlp(memory_expand + relative_pos)
         # tgt = torch.sum(v2 * attn, 1) # n_queries, batch, channel
         tgt = torch.einsum('qcbf,qcbf->qbf', attn, v2)  # n_queries, batch, channel
         tgt = self.out_mlp(tgt)

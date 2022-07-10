@@ -6,12 +6,11 @@ GENERAL:
 
 META:
   train_fold: 0
-  cvfold: 0
+  cvfold: 1
   k_shot: 1
-  cosine_thresh: 0.9
-  similarity_thresh: 0.24
+  similarity_thresh: 0.2
   fix_support: True
-  run_num: 1
+  run_num: 5
   type_support: fullscene_fold
   file_support: support_vectors_df
   test_model: geoformer
