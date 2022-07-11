@@ -158,9 +158,6 @@ def do_test(model, dataset):
                     if isinstance(scores_pred, list):
                         continue
 
-                    # proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
-                    # proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
-
                     benchmark_label = cfg.BENCHMARK_SEMANTIC_LABELS[label]
                     cluster_semantic = torch.ones((proposals_pred.shape[0], 1)) * benchmark_label
 

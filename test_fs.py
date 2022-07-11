@@ -128,7 +128,6 @@ def do_test(model, dataset):
 
             test_scene_name = scene_infos['query_scene']
             active_label    = scene_infos['active_label']
-            # logger.info("Test scene: {} {}/{}| Active classes: {}".format(test_scene_name, i, num_test_scenes, active_label))
             logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes))
 
             N = query_dict['feats'].shape[0]
@@ -151,25 +150,15 @@ def do_test(model, dataset):
 
                     outputs = model(support_dict, query_dict, [scene_infos], training=False, remember=remember, support_embeddings=support_embeddings)
 
-
                     if outputs['proposal_scores'] is None:
                         continue
-                    scores, proposals_idx, proposals_offset, seg_preds = outputs['proposal_scores']
-                    if isinstance(scores, list):
+                    scores_pred, proposals_pred = outputs['proposal_scores']
+                    if isinstance(scores_pred, list):
                         continue
-
-                    scores_pred = scores
-
-                    proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
-                    proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
 
                     benchmark_label = cfg.BENCHMARK_SEMANTIC_LABELS[label]
                     cluster_semantic = torch.ones((proposals_pred.shape[0], 1)) * benchmark_label
 
-                    # score_mask = (scores_pred > cfg.TEST_SCORE_THRESH)
-                    # scores_pred = scores_pred[score_mask]
-                    # proposals_pred = proposals_pred[score_mask]
-                    # cluster_semantic = cluster_semantic[score_mask]
 
                     clusters[k].append(proposals_pred)
                     cluster_scores[k].append(scores_pred)
@@ -183,8 +172,6 @@ def do_test(model, dataset):
                 clusters[k]            = torch.cat(clusters[k], axis=0)
                 cluster_scores[k]      = torch.cat(cluster_scores[k], axis=0)
                 cluster_semantic_id[k] = torch.cat(cluster_semantic_id[k], axis=0)
-
-                # print(clusters.shape, cluster_scores.shape, cluster_semantic_id.shape)
 
                 ##### nms
                 if cluster_scores[k].shape[0] == 0:
@@ -218,6 +205,7 @@ def do_test(model, dataset):
             overlap_time = time.time() - start_time
             logger.info(f'Elapsed time: {int(overlap_time)}s | Remained time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s')
             logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
+        
         ##### evaluation
         if cfg.eval:
             run_dict = {}

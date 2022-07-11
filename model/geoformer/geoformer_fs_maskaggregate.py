@@ -240,24 +240,24 @@ class GeoFormerFS(nn.Module):
         #     nn.Linear(3*set_aggregate_dim_out, 1, bias=False)
         # )
 
-        self.similarity_net = nn.Sequential(
-            nn.Linear(3 * set_aggregate_dim_out + 1, set_aggregate_dim_out, bias=True),
-            norm_fn(set_aggregate_dim_out),
-            nn.ReLU(),
-            nn.Linear(set_aggregate_dim_out, set_aggregate_dim_out, bias=True),
-            norm_fn(set_aggregate_dim_out),
-            nn.ReLU(),
-            nn.Linear(set_aggregate_dim_out, 1, bias=True)
-        )
         # self.similarity_net = nn.Sequential(
-        #     nn.Linear(3 * set_aggregate_dim_out, 3*set_aggregate_dim_out, bias=True),
-        #     norm_fn(3*set_aggregate_dim_out),
+        #     nn.Linear(3 * set_aggregate_dim_out + 1, set_aggregate_dim_out, bias=True),
+        #     norm_fn(set_aggregate_dim_out),
         #     nn.ReLU(),
-        #     nn.Linear(3*set_aggregate_dim_out, 3*set_aggregate_dim_out, bias=True),
-        #     norm_fn(3*set_aggregate_dim_out),
+        #     nn.Linear(set_aggregate_dim_out, set_aggregate_dim_out, bias=True),
+        #     norm_fn(set_aggregate_dim_out),
         #     nn.ReLU(),
-        #     nn.Linear(3*set_aggregate_dim_out, 1, bias=True)
+        #     nn.Linear(set_aggregate_dim_out, 1, bias=True)
         # )
+        self.similarity_net = nn.Sequential(
+            nn.Linear(3 * set_aggregate_dim_out, 3*set_aggregate_dim_out, bias=True),
+            norm_fn(3*set_aggregate_dim_out),
+            nn.ReLU(),
+            nn.Linear(3*set_aggregate_dim_out, 3*set_aggregate_dim_out, bias=True),
+            norm_fn(3*set_aggregate_dim_out),
+            nn.ReLU(),
+            nn.Linear(3*set_aggregate_dim_out, 1, bias=True)
+        )
         # self.detr_sem_head = GenericMLP(
         #     input_dim=cfg.dec_dim,
         #     hidden_dims=[cfg.dec_dim, cfg.dec_dim],
@@ -852,9 +852,9 @@ class GeoFormerFS(nn.Module):
         ''' channel-wise correlate '''
         channel_wise_tensor_sim  = final_mask_features_arr * support_embeddings.unsqueeze(1).repeat(1,final_mask_features_arr.shape[1],1)
         subtraction_tensor_sim  = final_mask_features_arr - support_embeddings.unsqueeze(1).repeat(1,final_mask_features_arr.shape[1],1)
-        cosine_tensor_sim = F.cosine_similarity(final_mask_features_arr, support_embeddings.unsqueeze(1).repeat(1,final_mask_features_arr.shape[1],1), dim=2)[:,:,None]
-        aggregation_tensor_sim = torch.cat([channel_wise_tensor_sim , subtraction_tensor_sim , cosine_tensor_sim, final_mask_features_arr], dim=2) # batch * n_sampling *(3*channel)
-        # aggregation_tensor_sim = torch.cat([channel_wise_tensor_sim , subtraction_tensor_sim, final_mask_features_arr], dim=2)
+        # cosine_tensor_sim = F.cosine_similarity(final_mask_features_arr, support_embeddings.unsqueeze(1).repeat(1,final_mask_features_arr.shape[1],1), dim=2)[:,:,None]
+        # aggregation_tensor_sim = torch.cat([channel_wise_tensor_sim , subtraction_tensor_sim , cosine_tensor_sim, final_mask_features_arr], dim=2) # batch * n_sampling *(3*channel)
+        aggregation_tensor_sim = torch.cat([channel_wise_tensor_sim , subtraction_tensor_sim, final_mask_features_arr], dim=2)
         similarity_score = self.similarity_net(aggregation_tensor_sim.flatten(0,1)).squeeze(-1).reshape(batch_size, aggregation_tensor_sim.shape[1]) # batch  x n_sampling
         
         return similarity_score, pre_enc_inds_mask

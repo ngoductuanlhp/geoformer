@@ -10,7 +10,7 @@ META:
   k_shot: 1
   similarity_thresh: 0.2
   fix_support: True
-  run_num: 5
+  run_num: 1
   type_support: fullscene_fold
   file_support: support_vectors_df
   test_model: geoformer
