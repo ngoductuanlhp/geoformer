@@ -21,7 +21,8 @@ from criterion_fs2 import FSInstSetCriterion
 
 from model.geoformer.geoformer_fs_maskaggregate import GeoFormerFS
 
-from datasets.scannetv2_fs_inst_onl import FSInstDataset
+# from datasets.scannetv2_fs_inst_onl import FSInstDataset
+from datasets.scannetv2_fs_inst import FSInstDataset
 
 from util.utils_scheduler import adjust_learning_rate, cosine_lr_after_step
 
@@ -114,23 +115,23 @@ def train_one_epoch(
                     mem_mb, 
                     iter_time.val, remain_time=remain_time))
             else:
-                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sim loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
-                    (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, 
-                    am_dict['loss'].val, am_dict['loss'].avg,
-                    am_dict['sim_loss'].val, am_dict['sim_loss'].avg,
-                    am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
-                    am_dict['dice_loss'].val, am_dict['dice_loss'].avg,
-                    mem_mb, 
-                    iter_time.val, remain_time=remain_time))
-
-                # logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                # logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Sim loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
                 #     (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, 
                 #     am_dict['loss'].val, am_dict['loss'].avg,
-                #     # am_dict['sim_loss'].val, am_dict['sim_loss'].avg,
+                #     am_dict['sim_loss'].val, am_dict['sim_loss'].avg,
                 #     am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
                 #     am_dict['dice_loss'].val, am_dict['dice_loss'].avg,
                 #     mem_mb, 
                 #     iter_time.val, remain_time=remain_time))
+
+                logger.info("Epoch: {}/{}, iter: {}/{} | lr: {:.6f} | loss: {:.4f}({:.4f}) | Focal loss: {:.4f}({:.4f}) | Dice loss: {:.4f}({:.4f}) | Mem: {:.2f} | iter_t: {:.2f} | remain_t: {remain_time}\n".format
+                    (epoch, cfg.epochs, iteration + 1, num_iter, curr_lr, 
+                    am_dict['loss'].val, am_dict['loss'].avg,
+                    # am_dict['sim_loss'].val, am_dict['sim_loss'].avg,
+                    am_dict['focal_loss'].val, am_dict['focal_loss'].avg,
+                    am_dict['dice_loss'].val, am_dict['dice_loss'].avg,
+                    mem_mb, 
+                    iter_time.val, remain_time=remain_time))
 
 
     if (epoch % cfg.save_freq == 0 or iteration==cfg.epochs):

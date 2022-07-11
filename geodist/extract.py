@@ -51,7 +51,7 @@ def extract(
     
 
     print('len dataloader', len(train_loader))
-
+    global_shape = np.array([0,0,0])
     with torch.no_grad():
         for iteration, batch in enumerate(train_loader):
 
@@ -65,6 +65,10 @@ def extract(
 
             _ = model.forward_extract(query_dict, scene_infos, fold=fold)
 
+            spatial_shape= query_dict['spatial_shape']
+            print(spatial_shape)
+            # global_shape = np.maximum(global_shape, spatial_shape)
+    print(global_shape)
     import pickle
     if fold == 0:
         save_path = 'data/scannetv2/geoformer_scene_info_train.pkl'
@@ -75,6 +79,8 @@ def extract(
         pickle.dump(model.save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
     print('Total saved scenes:', len(model.save_dict.keys()), len(train_loader))
     print('Save to', save_path)
+
+    model.save_dict = {}
 
 if __name__ == '__main__':
     ##### init

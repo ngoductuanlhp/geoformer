@@ -123,37 +123,43 @@ class ShortestObj(object):
 #     with open('data/scannetv2/geoformer_scene_info_train.pkl', 'rb') as f:
 #         geoformer_scene_info_train = pickle.load(f)
 
-#     with open('data/scannetv2/geoformer_knn_train.pkl', 'rb') as f:
-#         geoformer_knn_train = pickle.load(f)
+#     with open('data/scannetv2/geoformer_scene_info_val.pkl', 'rb') as f:
+#         geoformer_scene_info_val = pickle.load(f)
 
-#     for scene_name in tqdm(list(geoformer_scene_info_train.keys())[:10]):
-#         scene_dict = geoformer_scene_info_train[scene_name]
-#         knn = geoformer_knn_train[scene_name]
-#         locs_float_ = torch.from_numpy(scene_dict['locs_float_'])
-#         pre_enc_inds = torch.from_numpy(scene_dict['pre_enc_inds_arr'][0]).long()
-#         query_inds = pre_enc_inds[:128] # first 128 indices
+#     # with open('data/scannetv2/geoformer_knn_train.pkl', 'rb') as f:
+#     #     geoformer_knn_train = pickle.load(f)
 
-#         distances_arr = knn['distances_arr']
-#         indices_arr = knn['indices_arr']
-#         geo_dist = shortestObj.shortest_path(locs_float_, query_inds, distances_arr, indices_arr)
-
-#     # save_dict = {}
-
-#     # for scene_name in tqdm(geoformer_scene_info_train.keys()):
+#     # for scene_name in tqdm(list(geoformer_scene_info_train.keys())[:10]):
 #     #     scene_dict = geoformer_scene_info_train[scene_name]
-
+#     #     knn = geoformer_knn_train[scene_name]
 #     #     locs_float_ = torch.from_numpy(scene_dict['locs_float_'])
 #     #     pre_enc_inds = torch.from_numpy(scene_dict['pre_enc_inds_arr'][0]).long()
 #     #     query_inds = pre_enc_inds[:128] # first 128 indices
 
-#     #     distances_arr, indices_arr = shortestObj.knn(locs_float_, query_inds)
-#     #     # print(distances_arr)
-#     #     save_dict[scene_name] = {
-#     #         'distances_arr': distances_arr,
-#     #         'indices_arr': indices_arr,
-#     #     }
-#     # with open('data/scannetv2/geoformer_knn_train.pkl', 'wb') as handle:
-#     #     pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+#     #     distances_arr = knn['distances_arr']
+#     #     indices_arr = knn['indices_arr']
+#     #     geo_dist = shortestObj.shortest_path(locs_float_, query_inds, distances_arr, indices_arr)
+
+#     save_dict = {}
+
+#     for scene_name in tqdm(geoformer_scene_info_val.keys()):
+#         # if scene_name in geoformer_scene_info_train.keys():
+#         #     continue
+#         scene_dict = geoformer_scene_info_val[scene_name]
+
+#         locs_float_ = torch.from_numpy(scene_dict['locs_float_'])
+#         pre_enc_inds = torch.from_numpy(scene_dict['pre_enc_inds_arr'][0]).long()
+#         query_inds = pre_enc_inds[:128] # first 128 indices
+
+#         distances_arr, indices_arr = shortestObj.knn(locs_float_, query_inds)
+#         # print(distances_arr)
+#         save_dict[scene_name] = {
+#             'distances_arr': distances_arr,
+#             'indices_arr': indices_arr,
+#         }
+#     print(len(list(save_dict.keys())))
+#     with open('data/scannetv2/geoformer_knn_val.pkl', 'wb') as handle:
+#         pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
 #     # geo_dist = geo_dist.cpu().numpy()
 #     # np.save('scene0010_00', geo_dist)

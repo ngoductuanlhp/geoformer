@@ -123,6 +123,7 @@ class HungarianMatcher(nn.Module):
                 
             final_cost = final_cost.detach().cpu().numpy()
 
+
             row_inds, col_inds = linear_sum_assignment(final_cost)
 
             # inst_masks_clone = inst_masks_clone[col_inds]

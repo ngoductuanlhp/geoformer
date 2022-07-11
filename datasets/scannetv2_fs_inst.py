@@ -54,14 +54,17 @@ class FSInstDataset:
         with open(class2instances_file, 'rb') as f:
             self.class2instances = pickle.load(f)
 
+        self.load_scene_graph_info()
+
     def load_scene_graph_info(self):
 
-        load_path = os.path.join(self.data_root, self.dataset, 'geo', 'scene_graph_info_train.pkl')
+        # load_path = os.path.join(self.data_root, self.dataset, 'geoformer_stuff', 'geoformer_scene_info_train.pkl')
+        load_path = os.path.join(self.data_root, self.dataset, 'geoformer_scene_info_train.pkl')
         with open(load_path, 'rb') as handle:
             self.scene_graph_info_train = pickle.load(handle)
         # print('Load train info, total scenes:', len(self.scene_graph_info_train.keys()))
 
-        load_path = os.path.join(self.data_root, self.dataset, 'geo', 'scene_graph_info_test.pkl')
+        load_path = os.path.join(self.data_root, self.dataset, 'geoformer_scene_info_val.pkl')
         with open(load_path, 'rb') as handle:
             self.scene_graph_info_test = pickle.load(handle)
     def __len__(self):
@@ -451,29 +454,27 @@ class FSInstDataset:
             # ANCHOR Sampling query
             while True:
                 query_scene_name    = random.choice(self.class2scans_scenes[sampled_class])
-                geo_file = os.path.join(self.data_root, self.dataset, 'geo', 'geo_dist_train', '%s.npy' %query_scene_name)
+                geo_file = os.path.join(self.data_root, self.dataset, 'geoformer_geodist', f'geo_dist_{query_scene_name}.npy')
 
                 if os.path.exists(geo_file) and query_scene_name in self.scene_graph_info_train:
                     break
-            with open(geo_file, 'rb') as handle:
-                geo_dist_pkl = pickle.load(handle)
+            # with open(geo_file, 'rb') as handle:
+            #     geo_dist_pkl = pickle.load(handle)
 
             
 
             query_xyz_middle, query_xyz_scaled, \
             query_rgb, query_label, query_instance_label = self.load_single(query_scene_name, aug=False, permutate=False, val=True)
+
+            query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label = \
+                    self.quantize_input(query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label)
+
+
             query_label         = (query_label == sampled_class)
             query_instance_label[(query_label==0).nonzero()] = -100
 
-            # print(query_rgb.shape, query_xyz_middle.shape)
-            # with open(os.path.join(self.data_root, self.dataset, 'geo', 'geo_dist_train', '%s.npy' % query_scene_name), 'rb') as handle:
-            #     geo_dist_pkl = pickle.load(handle)
-
+            geo_dist = np.load(geo_file)
             scene_graph_info = self.scene_graph_info_train[query_scene_name]
-
-
-
-            geo_dist = self.process_geo_dist(scene_graph_info, geo_dist_pkl)
 
             scene_graph_info_arr.append(scene_graph_info)
 
@@ -558,7 +559,7 @@ class FSInstDataset:
         # query_instance_infos = torch.cat(query_instance_infos, 0).to(torch.float32)       # float (N, 9) (meanxyz, minxyz, maxxyz)
         query_instance_pointnum = torch.tensor(query_instance_pointnum, dtype=torch.int)  # int (total_nInst)                     # long (N)
         # query_spatial_shape = np.clip((query_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale[0], None)
-        query_spatial_shape = np.array([1024, 1024, 1024])
+        query_spatial_shape = np.array([384, 384, 192])
         
         ### voxelize
         query_voxel_locs, query_p2v_map, query_v2p_map = pointgroup_ops.voxelization_idx(query_locs, self.batch_size, self.mode)
@@ -593,12 +594,10 @@ class FSInstDataset:
             = self.load_single(query_scene_name, aug=False, permutate=False,val=True)
 
 
-        with open(os.path.join(self.data_root, self.dataset, 'geo', 'geo_dist_test', '%s.npy' %query_scene_name), 'rb') as handle:
-            geo_dist_pkl = pickle.load(handle)
+        geo_dist = np.load(os.path.join(self.data_root, self.dataset, 'geoformer_geodist2', f'geo_dist_{query_scene_name}.npy'))
         scene_graph_info = self.scene_graph_info_test[query_scene_name]
 
 
-        geo_dist = self.process_geo_dist(scene_graph_info, geo_dist_pkl)
         geo_dists = [torch.from_numpy(geo_dist).float()]
 
         query_locs = torch.cat([torch.LongTensor(query_xyz_scaled.shape[0], 1).fill_(0), torch.from_numpy(query_xyz_scaled).long()], 1)
@@ -680,7 +679,11 @@ class FSInstDataset:
             query_scene_name    = self.file_names[id].split('/')[-1].split('.')[0]
 
             query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label\
-                    = self.load_single(query_scene_name, aug=False, permutate=False)
+                    = self.load_single(query_scene_name, aug=False, permutate=False, val=True)
+
+            if self.split_set == 'train':
+                query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label = \
+                    self.quantize_input(query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label)
 
             query_batch_offsets.append(query_batch_offsets[-1] + query_xyz_scaled.shape[0])
             query_locs.append(torch.cat([torch.LongTensor(query_xyz_scaled.shape[0], 1).fill_(idx), \
@@ -699,7 +702,12 @@ class FSInstDataset:
         query_locs = torch.cat(query_locs, 0)                                # long (N, 1 + 3), the batch item idx is put in locs[:, 0]
         query_locs_float = torch.cat(query_locs_float, 0).to(torch.float32)  # float (N, 3)
         query_feats = torch.cat(query_feats, 0)                              # float (N, C)
-        query_spatial_shape = np.array([1024, 1024, 1024])
+
+        if self.split_set == 'train':
+            query_spatial_shape = np.array([384, 384, 192])
+        else:
+            query_spatial_shape = np.clip((query_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale[0], None)
+        # print((query_locs.max(0)[0][1:] + 1).numpy())
 
         ### voxelize
         query_voxel_locs, query_p2v_map, query_v2p_map = pointgroup_ops.voxelization_idx(query_locs, self.batch_size, self.mode)
@@ -714,3 +722,17 @@ class FSInstDataset:
 
         support_dict = {}
         return support_dict, query_dict, scene_infos
+
+    def quantize_input(self, query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label):
+        max_range = np.array([384, 384, 192])
+
+        # query_xyz_scaled_bool = (query_xyz_scaled < 512) # N x 3
+        query_xyz_scaled_cond = (np.sum((query_xyz_scaled < max_range[None,:]).astype(np.bool), axis=1) == 3)
+        query_xyz_middle = query_xyz_middle[query_xyz_scaled_cond]
+        query_xyz_scaled = query_xyz_scaled[query_xyz_scaled_cond]
+        query_rgb = query_rgb[query_xyz_scaled_cond]
+        query_label = query_label[query_xyz_scaled_cond]
+        query_instance_label = query_instance_label[query_xyz_scaled_cond]
+
+        return query_xyz_middle, query_xyz_scaled, query_rgb, query_label, query_instance_label
+
