@@ -243,7 +243,7 @@ class InstDataset(TorchDataset):
         # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
         # logger.info('Training samples: {}'.format(len(self.file_names))) 
 
-        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names][:100]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
 
         test_set = list(np.arange(len(self.test_names)))
 

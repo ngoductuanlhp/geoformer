@@ -38,7 +38,7 @@ DATA:
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 3
+  batch_size: 2
   full_scale: [128, 512]
   full_scale_support: [32, 64]
   max_npoint: 150000
@@ -64,7 +64,10 @@ TRAIN:
   save_freq: 2  # also eval_freq
   save_freq_last: 1
   # fix_module: []
-  fix_module: [input_conv, unet, output_layer, semantic, semantic_linear]
+  fix_module: [input_conv, unet, output_layer, semantic, semantic_linear,
+    set_aggregator,
+    mask_tower, controller, before_embedding_tower,
+  ]
 
 TEST:
   split: val

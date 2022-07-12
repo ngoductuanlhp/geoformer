@@ -14,6 +14,7 @@ import numpy as np
 from util.config import cfg
 
 from model.geoformer.geoformer_modules import ResidualBlock, VGGBlock, UBlock, conv_with_kaiming_uniform
+from model.geoformer.geodesic_utils import cal_geodesic_single, cal_geodesic_vectorize
 
 from lib.pointnet2.pointnet2_modules import PointnetSAModuleVotes, PointnetSAModuleVotesSeparate
 from lib.pointnet2.pointnet2_utils import furthest_point_sample
@@ -26,7 +27,8 @@ from model.helper import (ACTIVATION_DICT, NORM_DICT, WEIGHT_INIT_DICT,
                             get_clones, GenericMLP, BatchNormDim1Swap)
 
 from model.transformer_detr import TransformerDecoder, TransformerDecoderLayer
-
+import faiss                     # make faiss available
+import faiss.contrib.torch_utils
 
 class GeoFormer(nn.Module):
     def __init__(self):
@@ -181,6 +183,8 @@ class GeoFormer(nn.Module):
             output_dim=classes
         )
 
+        self.init_knn()
+
         self.apply(self.set_bn_init)
 
         for mod_name in self.fix_module:
@@ -188,12 +192,25 @@ class GeoFormer(nn.Module):
             for param in mod.parameters():
                 param.requires_grad = False
 
+    def init_knn(self):
+        faiss_cfg = faiss.GpuIndexFlatConfig()
+        # faiss_cfg = faiss.GpuIndexIVFFlatConfig()
+        faiss_cfg.useFloat16 = True
+        faiss_cfg.device = 0
+
+        # self.knn_res = faiss.StandardGpuResources()
+        # self.geo_knn = faiss.index_cpu_to_gpu(self.knn_res, 0, faiss.IndexFlatL2(3))
+        self.geo_knn = faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), 3, faiss_cfg)
+        # self.geo_knn = faiss.GpuIndexIVFFlat(faiss.StandardGpuResources(), 3, 384, faiss.METRIC_L2, faiss_cfg)
+
+
     def train(self, mode=True):
         super().train(mode)
         for mod_name in self.fix_module:
             mod = getattr(self, mod_name)
             for m in mod.modules():
                 m.eval()
+                
 
     @staticmethod
     def set_bn_init(m):
@@ -283,7 +300,7 @@ class GeoFormer(nn.Module):
         return weight_splits, bias_splits
 
 
-    def mask_heads_forward(self, mask_features, weights, biases, num_insts, coords_, fps_sampling_coords, use_coords=True):
+    def mask_heads_forward(self, geo_dist, mask_features, weights, biases, num_insts, coords_, fps_sampling_coords, use_geo=True):
         assert mask_features.dim() == 3
         n_layers = len(weights)
         c = mask_features.size(1)
@@ -291,9 +308,40 @@ class GeoFormer(nn.Module):
         x = mask_features.permute(2,1,0).repeat(num_insts, 1, 1) ### num_inst * c * N_mask
 
         relative_coords = fps_sampling_coords.reshape(-1, 1, 3) - coords_.reshape(1, -1, 3) ### N_inst * N_mask * 3
-        relative_coords = relative_coords.permute(0,2,1) ### num_inst * 3 * n_mask
-        # coords_ = coords_.reshape(1, -1, 3).repeat(num_insts, 1, 1).permute(0,2,1)
-        if use_coords:
+
+        if use_geo:
+            n_queries, n_contexts = geo_dist.shape[:2]
+            # relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
+            # relative_coords_geo[relative_coords_geo < 0] = 10
+
+            # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+
+            # max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
+            # # max_geo_val = torch.max(max_geo_dist_context)
+            # max_geo_dist_context[max_geo_dist_context < 0] = 10
+            # max_geo_dist_context = torch.sqrt(max_geo_dist_context)
+
+            # max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+
+            # # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+
+            # cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
+            # relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+            # # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
+
+            # # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
+            # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
+            # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+            # # relative_coords = relative_coords_geo
+            # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+
+            # relative_coords_geo = relative_coords_geo.permute(0,2,1)
+            # x = torch.cat([relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
+            
+            relative_coords = relative_coords.permute(0,2,1)
+            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+        else:
+            relative_coords = relative_coords.permute(0,2,1)
             x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
 
         x = x.reshape(1, -1, n_mask) ### 1 * (num_inst*c') * Nmask
@@ -305,7 +353,7 @@ class GeoFormer(nn.Module):
         return x
     
 
-    def get_mask_prediction(self, param_kernels, mask_features, locs_float_, fps_sampling_locs, batch_offsets_):
+    def get_mask_prediction(self, geo_dists, param_kernels, mask_features, locs_float_, fps_sampling_locs, batch_offsets_):
         # param_kernels = param_kernels.permute(0, 2, 1, 3) # num_layers x batch x n_queries x channel
         num_layers, n_queries, batch, channel = (
             param_kernels.shape[0],
@@ -343,8 +391,11 @@ class GeoFormer(nn.Module):
                 mask_feature_b = mask_features[start:end, :]
                 locs_float_b   = locs_float_[start:end, :]
                 fps_sampling_locs_b = fps_sampling_locs[b]
-                mask_logits         = self.mask_heads_forward(mask_feature_b, weights, biases, n_queries, locs_float_b, 
-                                                            fps_sampling_locs_b, use_coords=self.use_coords)
+
+                geo_dist = geo_dists[b]
+
+                mask_logits         = self.mask_heads_forward(geo_dist, mask_feature_b, weights, biases, n_queries, locs_float_b, 
+                                                            fps_sampling_locs_b, use_geo=self.use_coords)
                 
                 
                 mask_logits     = mask_logits.squeeze(dim=0) # (n_queries) x N_mask
@@ -427,9 +478,15 @@ class GeoFormer(nn.Module):
         # NOTE get queries
         query_locs = context_locs[:, :cfg.n_query_points, :]
 
+        # NOTE process geodist
+        max_step = 32 if self.training else 64 # add little longer in inference
+        geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
+                                                max_step=max_step, neighbor=32, radius=0.1, n_queries=cfg.n_query_points)
+
+
 
         # NOTE transformer decoder
-        dec_outputs = self.forward_decoder(context_locs, context_feats, query_locs, pc_dims)
+        dec_outputs = self.forward_decoder(context_locs, context_feats, query_locs, pc_dims, geo_dists, pre_enc_inds)
 
 
         if not training:
@@ -445,7 +502,7 @@ class GeoFormer(nn.Module):
             outputs['mask_predictions'] = None
             return outputs
 
-        mask_predictions = self.get_mask_prediction(dec_outputs, mask_features_, locs_float_, query_locs, batch_offsets_)
+        mask_predictions = self.get_mask_prediction(geo_dists, dec_outputs, mask_features_, locs_float_, query_locs, batch_offsets_)
 
         outputs['mask_predictions']  = mask_predictions
 
@@ -532,7 +589,7 @@ class GeoFormer(nn.Module):
             return context_locs, context_feats, pre_enc_inds
 
 
-    def forward_decoder(self, context_locs, context_feats, query_locs, pc_dims):
+    def forward_decoder(self, context_locs, context_feats, query_locs, pc_dims, geo_dists, pre_enc_inds):
         batch_size = context_locs.shape[0]
 
         context_embedding_pos = self.pos_embedding(context_locs, input_range=pc_dims)
@@ -552,10 +609,30 @@ class GeoFormer(nn.Module):
         context_feats           = context_feats.permute(2, 0, 1)
 
         # Encode relative pos
-        relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])
+        relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])   # b x n_queries x n_contexts x 3
         n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
-        relative_embbeding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
-        relative_embbeding_pos   = relative_embbeding_pos.permute(2,3,0,1)
+        # relative_embedding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
+        # relative_embedding_pos   = relative_embedding_pos.permute(2,3,0,1)
+
+        geo_dist_context = []
+        for b in range(batch_size):
+            geo_dist_context_b = geo_dists[b][:, pre_enc_inds[b].long()] # n_queries x n_contexts
+            geo_dist_context.append(geo_dist_context_b)
+        
+        geo_dist_context = torch.stack(geo_dist_context, dim=0)  # b x n_queries x n_contexts
+        max_geo_dist_context = torch.max(geo_dist_context, dim=2)[0]  # b x n_queries 
+        # max_geo_val = torch.max(max_geo_dist_context)
+        max_geo_dist_context[max_geo_dist_context < 0] = 5 # NOTE assign very big value to invalid queries
+
+        max_geo_dist_context = max_geo_dist_context[:,:,None,None].expand(batch_size, n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+
+        geo_dist_context = geo_dist_context[:,:,:,None].repeat(1,1,1,3)
+
+        cond = (geo_dist_context < 0)
+        geo_dist_context[cond] = max_geo_dist_context[cond] + relative_coords[cond]
+
+        relative_embedding_pos = self.pos_embedding(geo_dist_context.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
+        relative_embedding_pos   = relative_embedding_pos.permute(2,3,0,1)
 
         # num_layers x n_queries x batch x channel
         dec_outputs = self.decoder(
@@ -563,7 +640,7 @@ class GeoFormer(nn.Module):
             memory=context_feats, 
             pos=context_embedding_pos, 
             query_pos=query_embedding_pos,
-            relative_pos=relative_embbeding_pos
+            relative_pos=relative_embedding_pos
         )
 
         return dec_outputs

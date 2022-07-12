@@ -17,7 +17,7 @@ import time
 from datasets.scannetv2_fs_inst import FSInstDataset
 from lib.pointgroup_ops.functions import pointgroup_ops
 
-
+from datasets.scannetv2 import BENCHMARK_SEMANTIC_LABELS, FOLD
 
 def init():
     os.makedirs(cfg.exp_path, exist_ok=True)
@@ -108,7 +108,7 @@ def do_test(model, dataset):
 
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     dataloader = dataset.testLoader()
-    dataset.load_scene_graph_info()
+    # dataset.load_scene_graph_info()
     
     
     num_test_scenes = len(dataloader)
@@ -156,7 +156,7 @@ def do_test(model, dataset):
                     if isinstance(scores_pred, list):
                         continue
 
-                    benchmark_label = cfg.BENCHMARK_SEMANTIC_LABELS[label]
+                    benchmark_label = BENCHMARK_SEMANTIC_LABELS[label]
                     cluster_semantic = torch.ones((proposals_pred.shape[0], 1)) * benchmark_label
 
 
@@ -203,7 +203,7 @@ def do_test(model, dataset):
                     matches[k][test_scene_name]['pred'] = pred2gt
 
             overlap_time = time.time() - start_time
-            logger.info(f'Elapsed time: {int(overlap_time)}s | Remained time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s')
+            logger.info(f'Elapsed time: {int(overlap_time)}s | Remaining time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s')
             logger.info("Num points: {} | Num instances of {} runs: {}".format(query_dict['locs'].shape[0], cfg.run_num, nclusters))
         
         ##### evaluation
@@ -240,8 +240,6 @@ if __name__ == '__main__':
 
     if cfg.test_model == 'geoformer':
         # from model.geoformer.geoformer_fs import GeoFormerFS
-        # from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
-        # from model.geoformer.geoformer_fs_online_geo_onlysim import GeoFormerFS
         from model.geoformer.geoformer_fs_maskaggregate import GeoFormerFS
 
         model = GeoFormerFS()

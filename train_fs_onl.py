@@ -15,13 +15,9 @@ from solver import PolyLR
 import datetime
 import math
 
-from criterion_fs2 import FSInstSetCriterion
-# from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
-# from model.geoformer.geoformer_fs_online_geo_onlysim import GeoFormerFS
-
+from criterion_fs import FSInstSetCriterion
 from model.geoformer.geoformer_fs_maskaggregate import GeoFormerFS
 
-# from datasets.scannetv2_fs_inst_onl import FSInstDataset
 from datasets.scannetv2_fs_inst import FSInstDataset
 
 from util.utils_scheduler import adjust_learning_rate, cosine_lr_after_step
@@ -203,7 +199,6 @@ if __name__ == '__main__':
 
 
     dataset = FSInstDataset(split_set='train')
-    # dataset.load_scene_graph_info()
     train_loader = dataset.trainLoader()
 
 

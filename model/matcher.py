@@ -113,6 +113,9 @@ class HungarianMatcher(nn.Module):
 
             dice_cost = dice_cost.reshape(self.n_queries, n_inst_gt)
 
+            # if torch.any(torch.isnan(dice_cost)):
+            #     breakpoint()
+
             if fewshot:
                 final_cost = 1 * dice_cost
             else:

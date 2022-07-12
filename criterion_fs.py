@@ -116,6 +116,8 @@ class FSInstSetCriterion(nn.Module):
 
         self.cal_simloss = 'similarity_net' not in cfg.fix_module
 
+        self.cached = []
+
     def sim_loss(self, similarity_score, instance_masked, mask_logits, batch_ids):
         train_label = torch.zeros((self.batch_size, self.n_queries)).cuda()
         n_hard_negatives = torch.zeros(self.batch_size).cuda()
@@ -171,8 +173,7 @@ class FSInstSetCriterion(nn.Module):
 
         loss_pos = loss_all * train_label
 
-        # print('loss_pos', loss_all.shape)
-        print("Positive/negative:", train_label.sum(), n_hard_negatives.sum())
+        print("Positive/negative samples of SimLoss:", train_label.sum().detach().item(), n_hard_negatives.sum().detach().item())
         loss_neg[train_label.long()] = 0
         # loss_neg = loss_neg * (1-train_label.long())
         # print('loss_neg', loss_neg.shape)
@@ -187,7 +188,7 @@ class FSInstSetCriterion(nn.Module):
 
         return similarity_loss
 
-    def single_layer_loss(self, mask_prediction, similarity_score, instance_masked, semantic_masked, batch_ids):
+    def single_layer_loss(self, mask_prediction, similarity_score, instance_masked, semantic_masked, batch_ids, cal_match=False):
         loss = torch.tensor(0.0, requires_grad=True).to(instance_masked.device)
         loss_dict = {}
 
@@ -208,12 +209,18 @@ class FSInstSetCriterion(nn.Module):
 
             # print('mask_logit_b', mask_logit_b.shape, cls_logit_b.shape)
             # print('instance_masked_b', instance_masked_b.shape)
-
+            # print(batch, mask_logit_b.shape)
             if mask_logit_b == None:
                 continue
-            
-            pred_inds, inst_mask_gt, sem_cls_gt = self.matcher.forward_seg_single(mask_logit_b, similarity_score_b, 
-                                                    instance_masked_b, semantic_masked_b, fewshot=True)
+
+            if cal_match:
+                pred_inds, inst_mask_gt, sem_cls_gt = self.matcher.forward_seg_single(mask_logit_b, similarity_score_b, 
+                                                        instance_masked_b, semantic_masked_b, fewshot=True)
+                
+                self.cached.append((pred_inds, inst_mask_gt, sem_cls_gt))
+            else:
+                pred_inds, inst_mask_gt, sem_cls_gt = self.cached[batch]
+
             if pred_inds is None:
                 continue
             mask_logit_pred = mask_logit_b[pred_inds]
@@ -223,6 +230,10 @@ class FSInstSetCriterion(nn.Module):
             
             if num_gt_batch == 0:
                 continue
+
+            # print('mask_logit_pred', mask_logit_pred.shape)
+            # reduce memory         
+            # sampling_indices = torch.tensor(np.random.choice(mask_logit_pred.shape[1], 5000, replace=(5000>mask_logit_pred.shape[1])), dtype=torch.long).cuda()
             
             # print('mask', mask_logit_pred.shape, num_gt_batch)
             loss_dict['dice_loss'] += compute_dice_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
@@ -261,7 +272,8 @@ class FSInstSetCriterion(nn.Module):
             loss_dict_out['sim_loss'] = (sim_loss.item(), self.n_queries)
 
         ''' Main loss '''
-        main_loss, loss_dict, num_gt = self.single_layer_loss(mask_predictions[-1], similarity_score, instance_masked, semantic_masked, batch_ids)
+        self.cached = []
+        main_loss, loss_dict, num_gt = self.single_layer_loss(mask_predictions[-1], similarity_score, instance_masked, semantic_masked, batch_ids, cal_match=True)
         loss += main_loss
 
         ''' Auxilary loss '''
@@ -273,5 +285,4 @@ class FSInstSetCriterion(nn.Module):
         loss_dict_out['dice_loss'] = (loss_dict['dice_loss'].item(), num_gt)
         # loss_dict_out['cls_loss'] = (loss_dict['cls_loss'].item(), self.n_queries)
         loss_dict_out['loss'] = (loss.item(), semantic_labels.shape[0])
-
         return loss, loss_dict_out

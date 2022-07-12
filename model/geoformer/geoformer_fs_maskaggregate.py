@@ -10,81 +10,28 @@ from torch.nn import functional as F
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
 import numpy as np
-from model.transformer import TransformerEncoder
 from util.config import cfg
 
 from model.geoformer.geoformer_modules import ResidualBlock, VGGBlock, UBlock, conv_with_kaiming_uniform
+from model.geoformer.geodesic_utils import cal_geodesic_single, cal_geodesic_vectorize
 
 from lib.pointnet2.pointnet2_modules import PointnetSAModuleVotes, PointnetSAModuleVotesSeparate
 from lib.pointnet2.pointnet2_utils import furthest_point_sample
 
 from model.pos_embedding import PositionEmbeddingCoordsSine
-from model.helper import unique_with_inds
+
 
 from util.config import cfg
-import time
-
 
 from model.helper import (ACTIVATION_DICT, NORM_DICT, WEIGHT_INIT_DICT,
                             get_clones, GenericMLP, BatchNormDim1Swap)
 
 from model.transformer_detr import TransformerDecoder, TransformerDecoderLayer
 
-import pickle
 import faiss                     # make faiss available
 import faiss.contrib.torch_utils
-from numba import njit, prange
-from numba import types
-from numba.extending import overload
 
-from .model_utils import find_shortest_path
 
-# @njit(parallel=True)
-# def shortest_path(
-#     query_inds: np.ndarray,
-#     distances_arr: np.ndarray,
-#     indices_arr: np.ndarray,
-#     max_step: int = 16,
-#     radius: float = 0.01
-# ):  
-#     n_points = distances_arr.shape[1]
-#     geo_dist_b = np.full((query_inds.shape[0], n_points), -1, dtype=np.float32)
-#     visited_b = np.full((query_inds.shape[0], n_points), 0, dtype=np.int32)
-#     for q in prange(query_inds.shape[0]):
-#         visited_b[q, query_inds[q]] += 1
-#         geo_dist_b[q, query_inds[q]] = 0.0
-#         distances = distances_arr[query_inds[q]][1:]
-#         indices = indices_arr[query_inds[q]][1:]
-#         cond = (distances <= radius) & (indices >= 0)
-#         distances = distances[cond]
-#         indices = indices[cond]
-
-#         for it in range(max_step):
-#             # breakpoint()
-#             indices_unique, corres_inds = np.unique(indices, return_index=True)
-#             distances_uniques = distances[corres_inds]
-
-#             inds = np.nonzero((visited_b[q, indices_unique] < 1)).view(-1)
-
-#             if len(inds) < 4:
-#                 break
-#             indices_unique = indices_unique[inds]
-#             distances_uniques = distances_uniques[inds]
-
-#             geo_dist_b[q, indices_unique] = distances_uniques
-#             visited_b[q, indices_unique] = True
-
-#             D_geo = distances_arr[indices_unique]
-#             I_geo = indices_arr[indices_unique]
-
-#             D_geo_cumsum = D_geo + distances_uniques.unsqueeze(-1)
-
-#             indices, distances_local, distances_global = I_geo.reshape(-1), D_geo.reshape(-1), D_geo_cumsum.reshape(-1)
-#             cond = (distances_local <= radius)  & (indices >= 0)
-#             distances = distances_global[cond]
-#             indices = indices[cond]
-
-#     return geo_dist_b
 
 class GeoFormerFS(nn.Module):
     def __init__(self):
@@ -103,9 +50,6 @@ class GeoFormerFS(nn.Module):
         self.fix_module = cfg.fix_module
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
-
-
-        
 
         #### backbone
         self.input_conv = spconv.SparseSequential(
@@ -159,7 +103,7 @@ class GeoFormerFS(nn.Module):
         for i in range(self.embedding_conv_num):
             if i ==0:
                 if self.use_coords:
-                    weight_nums.append((self.output_dim+3) * self.output_dim)
+                    weight_nums.append((self.output_dim+3+1) * self.output_dim)
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
                 bias_nums.append(self.output_dim)
@@ -271,7 +215,6 @@ class GeoFormerFS(nn.Module):
                 param.requires_grad = False
 
         
-        self.save_dict = {}
 
     def init_knn(self):
         faiss_cfg = faiss.GpuIndexFlatConfig()
@@ -299,7 +242,7 @@ class GeoFormerFS(nn.Module):
             m.weight.data.fill_(1.0)
             m.bias.data.fill_(0.0)
 
-    def generate_proposal(self, geo_dist_arr, mask_logits, similarity_score, fg_idxs, batch_offsets, logit_thresh=0.5, score_thresh=0.5, npoint_thresh=100, sim_score_thresh=0.5):
+    def generate_proposal(self, mask_logits, similarity_score, fg_idxs, batch_offsets, logit_thresh=0.5, score_thresh=0.5, npoint_thresh=100, sim_score_thresh=0.5):
 
         # NOTE only batch 1 when test
         b = 0
@@ -378,29 +321,37 @@ class GeoFormerFS(nn.Module):
         
         if use_geo:
             n_queries, n_contexts = geo_dist.shape[:2]
-            # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+            relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
+            relative_coords_geo[relative_coords_geo < 0] = 10
+                # lative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+                # max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
+                # max_geo_val = torch.max(max_geo_dist_context)
+                # max_geo_dist_context[max_geo_dist_context < 0] = 5
+                # max_geo_dist_context = torch.sqrt(max_geo_dist_context)
 
-            max_geo_dist_context = torch.sqrt(torch.max(geo_dist, dim=1)[0])  # n_queries
-            max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+                # max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
 
-            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+                # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
-            cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
-            relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
+                # cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
+                # relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+                # # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
 
-            # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
-            # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
-            # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
-            # relative_coords_geo[cond] = relative_coords_geo[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords_geo[cond])
-            # relative_coords = relative_coords_geo
-            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+                # # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
+                # # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
+                # # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+                # # relative_coords = relative_coords_geo
+                # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
-        relative_coords = relative_coords.permute(0,2,1)
-        x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
-        # else:
-        #     relative_coords = relative_coords.permute(0,2,1)
-        #     x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+                # relative_coords = relative_coords.permute(0,2,1)
+                # x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+
+            relative_coords = relative_coords.permute(0,2,1)
+            x = torch.cat([relative_coords, relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
+            
+        else:
+            relative_coords = relative_coords.permute(0,2,1)
+            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
 
         x = x.reshape(1, -1, n_mask) ### 1 * (num_inst*c') * Nmask
         for i, (w, b) in enumerate(zip(weights, biases)):
@@ -475,73 +426,6 @@ class GeoFormerFS(nn.Module):
 
         return sparse_input
 
-    
-    def calculate_geo_dist(self, locs_float_, batch_offsets_, query_locs, max_step=6, neighbor=20, radius=0.1):
-        batch_size = query_locs.shape[0]
-
-        geo_dist = []
-        for b in range(batch_size):
-            start = batch_offsets_[b]
-            end = batch_offsets_[b+1]
-
-            locs_float_b = locs_float_[start:end, :]
-            query_locs_b = query_locs[b]
-
-
-            if len(query_locs_b) == 0:
-                continue
-            geo_dist_b = torch.zeros((query_locs_b.shape[0], locs_float_b.shape[0]), dtype=torch.float, device=locs_float_.device)-1
-                # visited_b = torch.zeros((query_locs_b.shape[0], locs_float_b.shape[0]), dtype=torch.bool, device=locs_float_.device)
-
-
-                # self.geo_knn.add(locs_float_b)
-                # distances_arr, indices_arr = self.geo_knn.search(locs_float_b, neighbor)
-                # distances_arr = torch.sqrt(distances_arr)
-                # self.geo_knn.reset()
-                # # print('locs_float_', locs_float_[0])
-                # for q in range(query_locs_b.shape[0]):
-                #     # print('debug', query_locs_b)
-                #     D_geo, I_geo = distances_arr[query_inds[b,q]], indices_arr[query_inds[b,q]]
-                #     indices, distances = I_geo.reshape(-1), D_geo.reshape(-1)
-                #     cond = (distances <= radius) & (indices >= 0)
-                #     distances = distances[cond]
-                #     indices = indices[cond]
-
-                #     for it in range(max_step):
-                #         # breakpoint()
-                #         indices_unique, corres_inds = unique_with_inds(indices)
-                #         distances_uniques = distances[corres_inds]
-
-                #         inds = torch.nonzero((visited_b[q, indices_unique]==False)).view(-1)
-
-                #         if len(inds) < 4:
-                #             break
-                #         indices_unique = indices_unique[inds]
-                #         distances_uniques = distances_uniques[inds]
-
-                #         geo_dist_b[q, indices_unique] = distances_uniques
-                #         visited_b[q, indices_unique] = True
-
-                #         D_geo, I_geo = distances_arr[indices_unique], indices_arr[indices_unique]
-                #         # D_geo, I_geo = self.geo_knn.search(locs_float_[indices_unique], neighbor)
-                #         # D_geo = torch.sqrt(D_geo)
-
-                #         D_geo_cumsum = D_geo + distances_uniques.unsqueeze(-1)
-
-                #         indices, distances_local, distances_global = I_geo.reshape(-1), D_geo.reshape(-1), D_geo_cumsum.reshape(-1)
-                #         cond = (distances_local <= radius) & (indices >= 0)
-                #         distances = distances_global[cond]
-                #         indices = indices[cond]
-                
-                # # print(torch.mean(geo_dist_b[geo_dist_b>0]), torch.count_nonzero(geo_dist_b), torch.numel(geo_dist_b))
-                # # geo_dist_b = geo_dist_b * 2
-                # geo_dist_b[geo_dist_b<0] = 1
-                # geo_dist_b[geo_dist_b>=5] = 1
-            # geo_dist_b = geo_dist_b/10
-            geo_dist.append(geo_dist_b)
-
-        return geo_dist
-
 
     def process_support(self, batch_input, training=True):
         batch_idxs      = batch_input['locs'][:, 0].int()
@@ -596,8 +480,6 @@ class GeoFormerFS(nn.Module):
         locs_float  = scene_dict['locs_float']
         batch_offsets = scene_dict['batch_offsets']
 
-        scene_graph_info = scene_dict['scene_graph_info']
-
         batch_size  = len(batch_offsets) - 1
         assert batch_size > 0
 
@@ -641,7 +523,7 @@ class GeoFormerFS(nn.Module):
 
 
             # NOTE aggregator 
-            contexts = self.forward_aggregator(locs_float_, output_feats_, batch_offsets_, batch_size, scene_graph_info)
+            contexts = self.forward_aggregator(locs_float_, output_feats_, batch_offsets_, batch_size)
             if contexts is None:
                 outputs['mask_predictions']  = None
                 return outputs
@@ -651,14 +533,11 @@ class GeoFormerFS(nn.Module):
             # NOTE get queries
             query_locs = context_locs[:, :cfg.n_query_points, :]
             
-            # query_locs, query_embedding_pos, query_sampling_inds = self.sample_query_embedding(context_locs, pc_dims, cfg.n_query_points)
-
-            # geo_dist_arr = self.calculate_geo_dist(locs_float_, batch_offsets_, query_locs)
-            # # geo_dist_arr = scene_dict['geo_dists']
 
             # NOTE process geodist
-            geo_dists = scene_dict['geo_dists'] # list of b geo_dist
-            # geo_dists = find_shortest_path(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_, max_step=10, neighbor=32)
+            max_step = 64 if self.training else 128 # add little longer in inference
+            geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
+                                                 max_step=max_step, neighbor=32, radius=0.1, n_queries=cfg.n_query_points)
 
             self.cache_data = (context_locs, context_feats, pre_enc_inds,
                                 fg_idxs, batch_offsets, 
@@ -680,8 +559,6 @@ class GeoFormerFS(nn.Module):
         subtraction_tensor = context_feats - support_embeddings.unsqueeze(1).repeat(1,cfg.n_decode_point,1)
         aggregation_tensor = torch.cat([channel_wise_tensor, subtraction_tensor, context_feats], dim=2) # batch * n_sampling *(3*channel)
 
-        
-        
         # NOTE transformer decoder
         dec_outputs = self.forward_decoder(context_locs, aggregation_tensor, query_locs, pc_dims, geo_dists, pre_enc_inds)
 
@@ -712,7 +589,7 @@ class GeoFormerFS(nn.Module):
             return outputs
             
         similarity_score_sigmoid = similarity_score.detach().sigmoid()
-        scores_final, proposals_pred = self.generate_proposal(geo_dists, mask_logit_final, similarity_score_sigmoid, fg_idxs, batch_offsets, 
+        scores_final, proposals_pred = self.generate_proposal(mask_logit_final, similarity_score_sigmoid, fg_idxs, batch_offsets, 
                                             logit_thresh=0.2,
                                             score_thresh=cfg.TEST_SCORE_THRESH,
                                             npoint_thresh=cfg.TEST_NPOINT_THRESH,
@@ -741,7 +618,7 @@ class GeoFormerFS(nn.Module):
 
             return output_feats, semantic_scores, semantic_preds
 
-    def forward_aggregator(self, locs_float_, output_feats_, batch_offsets_, batch_size, scene_graph_info):
+    def forward_aggregator(self, locs_float_, output_feats_, batch_offsets_, batch_size):
         context_aggregator = torch.no_grad if 'set_aggregator' in self.fix_module else torch.enable_grad
         with context_aggregator():
             
@@ -757,37 +634,16 @@ class GeoFormerFS(nn.Module):
                 output_feats_b = output_feats_[start:end, :]
                 batch_points = (end - start).item()
 
-                scene_graph_info_b = scene_graph_info[b]
-                pre_enc_inds_arr = scene_graph_info_b['pre_enc_inds_arr']
-                pre_enc_inds_arr = torch.from_numpy(pre_enc_inds_arr).to(locs_float_.device)
 
                 if batch_points == 0:
                     return None
 
-                # if batch_points <= cfg.n_downsampling:
-                #     npoint = batch_points  
-                # else:
-                #     npoint = cfg.n_downsampling
-
-                # sampling_indices = torch.tensor(np.random.choice(batch_points, npoint, replace=False), dtype=torch.long, device=locs_float_.device)
-
-                # locs_float_b = locs_float_b[sampling_indices].unsqueeze(0)
-                # output_feats_b = output_feats_b[sampling_indices].unsqueeze(0)
                 locs_float_b = locs_float_b.unsqueeze(0)
                 output_feats_b = output_feats_b.unsqueeze(0)
-
-                assert torch.equal(locs_float_b[0], torch.from_numpy(scene_graph_info_b['locs_float_']).cuda())
 
                 context_locs_b, grouped_features_b, grouped_xyz_b, pre_enc_inds_b = self.set_aggregator.group_points(locs_float_b.contiguous(), 
                                                                         output_feats_b.transpose(1,2).contiguous())
 
-                assert torch.equal(pre_enc_inds_arr, pre_enc_inds_b)
-                # context_locs_b, grouped_features_b, grouped_xyz_b, pre_enc_inds_b = self.set_aggregator.group_points(locs_float_b.contiguous(), 
-                #                                                         output_feats_b.transpose(1,2).contiguous(), inds=pre_enc_inds_arr)
-
-                # if torch.any(torch.isnan(context_locs_b)):
-                #     print('context_locs_b bug')
-                #     breakpoint()
 
                 context_locs.append(context_locs_b)
                 grouped_features.append(grouped_features_b)
@@ -831,24 +687,20 @@ class GeoFormerFS(nn.Module):
 
         geo_dist_context = []
         for b in range(batch_size):
-            geo_dist_b = geo_dists[b] # n_queries x n_mask
-            pre_enc_inds_b = pre_enc_inds[b].long()
-
-            geo_dist_context_b = geo_dist_b[:, pre_enc_inds_b] # n_queries x n_contexts
-            geo_dist_context_b = geo_dist_context_b.unsqueeze(-1).repeat(1,1,3) # n_queries x n_contexts x 3
-
+            geo_dist_context_b = geo_dists[b][:, pre_enc_inds[b].long()] # n_queries x n_contexts
             geo_dist_context.append(geo_dist_context_b)
-        geo_dist_context = torch.stack(geo_dist_context, dim=0).cuda()  # b x n_queries x n_contexts x 3
-        max_geo_dist_context = torch.max(geo_dist_context, dim=2)[0]  # b x n_queries x x 3
-        max_geo_dist_context = max_geo_dist_context[:,:,None,:].expand(batch_size, n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+        
+        geo_dist_context = torch.stack(geo_dist_context, dim=0)  # b x n_queries x n_contexts
+        max_geo_dist_context = torch.max(geo_dist_context, dim=2)[0]  # b x n_queries 
+        # max_geo_val = torch.max(max_geo_dist_context)
+        max_geo_dist_context[max_geo_dist_context < 0] = 5 # NOTE assign very big value to invalid queries
+
+        max_geo_dist_context = max_geo_dist_context[:,:,None,None].expand(batch_size, n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+
+        geo_dist_context = geo_dist_context[:,:,:,None].repeat(1,1,1,3)
 
         cond = (geo_dist_context < 0)
         geo_dist_context[cond] = max_geo_dist_context[cond] + relative_coords[cond]
-
-
-        # if torch.any(torch.isnan(geo_dist_context)):
-        #     print('bug')
-        #     breakpoint()
 
         relative_embedding_pos = self.pos_embedding(geo_dist_context.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
         relative_embedding_pos   = relative_embedding_pos.permute(2,3,0,1)
@@ -916,91 +768,3 @@ class GeoFormerFS(nn.Module):
         similarity_score = self.similarity_net(aggregation_tensor_sim.flatten(0,1)).squeeze(-1).reshape(batch_size, aggregation_tensor_sim.shape[1]) # batch  x n_sampling
         
         return similarity_score, pre_enc_inds_mask
-
-    def forward_extract(self, scene_dict, scene_infos, fold=0):
-        outputs = {}
-
-        outputs     = {}
-        batch_idxs  = scene_dict['locs'][:, 0].int()
-        locs_float  = scene_dict['locs_float']
-        batch_offsets = scene_dict['batch_offsets']
-
-
-        batch_size  = len(batch_offsets) - 1
-        assert batch_size > 0
-
-        pc_dims = [
-            scene_dict["pc_mins"],
-            scene_dict["pc_maxs"],
-        ]
-
-        N_points = locs_float.shape[0]
-
-        output_feats, semantic_scores, semantic_preds = self.forward_backbone(scene_dict, batch_size)
-
-        outputs['semantic_scores'] = semantic_scores
-
-        if fold == 0:
-            fg_condition = semantic_preds >= 4
-        else:
-            fg_condition = semantic_preds == 3
-            
-        fg_idxs         = torch.nonzero(fg_condition).view(-1)
-
-        batch_idxs_     = batch_idxs[fg_idxs]
-        batch_offsets_  = utils.get_batch_offsets(batch_idxs_, batch_size)
-        locs_float_     = locs_float[fg_idxs]
-        output_feats_   = output_feats[fg_idxs]
-
-
-        # 1-dim: n_queries*batch_size
-        context_locs = []
-        context_feats = []
-        pre_enc_inds_arr = []
-        for b in range(batch_size):
-            start = batch_offsets_[b]
-            end = batch_offsets_[b+1]
-            locs_float_b = locs_float_[start:end, :]
-            output_feats_b = output_feats_[start:end, :]
-            batch_points = (end - start).cpu().item()
-
-            if batch_points == 0:
-                print('bug')
-
-                outputs['mask_predictions']  = None
-                outputs['proposal_scores']  = None
-                return outputs
-
-
-            locs_float_b = locs_float_b.unsqueeze(0)
-            output_feats_b = output_feats_b.unsqueeze(0)
-
-            context_locs_b, grouped_features, grouped_xyz, pre_enc_inds = self.set_aggregator.group_points(locs_float_b.contiguous(), 
-                                                            output_feats_b.transpose(1,2).contiguous())
-            context_feats_b = self.set_aggregator.mlp(grouped_features, grouped_xyz)
-            # query_xyz1_b, output_feats1_b, pre_enc_inds = self.set_aggregator(locs_float_b.contiguous(), 
-            #                                                 output_feats_b.transpose(1,2).contiguous())
-            context_feats_b = context_feats_b.transpose(1,2)
-
-            context_locs.append(context_locs_b)
-            context_feats.append(context_feats_b)
-            pre_enc_inds_arr.append(pre_enc_inds)
-
-        for b in range(batch_size):
-            start = batch_offsets_[b]
-            end = batch_offsets_[b+1]
-            s_info = scene_infos[b]['query_scene']
-
-            s_dict = {
-                # 'query_sampling_inds': query_sampling_inds[b].detach().cpu().numpy(),
-                'pre_enc_inds_arr': pre_enc_inds_arr[b].detach().cpu().numpy(),
-                # 'query_locs': query_locs[b].detach().cpu().numpy(),
-                'locs_float_': locs_float_[start:end, :].detach().cpu().numpy(),
-                'fg_idxs': fg_idxs[start:end].detach().cpu().numpy()
-            }
-
-            print('len inds', locs_float_.shape[0])
-            print("save", s_info, len(self.save_dict.keys()))
-            self.save_dict[s_info] = s_dict
-
-        return None

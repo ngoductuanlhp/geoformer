@@ -57,30 +57,31 @@ class ShortestObj(object):
         indices_arr = indices_arr.cuda()
 
 
+        start_time = time.time()
         geo_dist = torch.zeros((query_locs_.shape[0], locs_float_.shape[0]), dtype=torch.float, device=indices_arr.device)-1
         visited = torch.zeros((query_locs_.shape[0], locs_float_.shape[0]), dtype=torch.bool, device=indices_arr.device)
         
         # print('locs_float_', locs_float_[0])
-        for q in (range(query_inds.shape[0])):
-            # print('debug', query_locs_b)
+        for q in (range(query_locs_.shape[0])):
+            geo_dist[q, query_inds[q]] = 0.0
+            visited[q, query_inds[q]] = True
+
             D_geo, I_geo = distances_arr[query_inds[q]], indices_arr[query_inds[q]]
 
 
             indices, distances = I_geo[1:].reshape(-1), D_geo[1:].reshape(-1)
 
-            # print(distances)
             cond = ((distances <= radius) & (indices >= 0)).bool()
 
-
-            # breakpoint()
             distances = distances[cond]
             indices = indices[cond]
 
             for it in range(max_step):
-                # breakpoint()
-
                 indices_unique, corres_inds = unique_with_inds(indices)
                 distances_uniques = distances[corres_inds]
+                # print('indices_unique', indices_unique.shape)
+                # indices_unique = indices
+                # distances_uniques = distances
 
                 inds = torch.nonzero((visited[q, indices_unique]==False)).view(-1)
 
@@ -93,8 +94,6 @@ class ShortestObj(object):
                 visited[q, indices_unique] = True
 
                 D_geo, I_geo = distances_arr[indices_unique][:, 1:], indices_arr[indices_unique][:, 1:]
-                # D_geo, I_geo = self.geo_knn.search(locs_float_[indices_unique], neighbor)
-                # D_geo = torch.sqrt(D_geo)
 
                 D_geo_cumsum = D_geo + distances_uniques.unsqueeze(-1)
 
@@ -103,16 +102,85 @@ class ShortestObj(object):
                 distances = distances_global[cond]
                 indices = indices[cond]
         
-        # end_time = time.time()
-        # print('time', end_time - start_time)
 
-        # debug_dist = torch.sum((geo_dist>-1), dim=1)
-        # print(debug_dist)
-        # # print(torch.mean(geo_dist_b[geo_dist_b>0]), torch.count_nonzero(geo_dist_b), torch.numel(geo_dist_b))
-        # # geo_dist_b = geo_dist_b * 2
-        # geo_dist[geo_dist<0] = 1
-        # geo_dist[geo_dist>=5] = 1
 
+        end_time = time.time()
+
+        print('time', end_time - start_time)
+        geo_dist = geo_dist.cpu().numpy()
+        return geo_dist
+
+    def shortest_path_chunk(self, locs_float_, query_inds, distances_arr, indices_arr, max_step=48, neighbor=32, radius=0.5):
+        query_locs_ = locs_float_[query_inds]
+        # quit()
+        distances_arr = distances_arr[:, 1:].cuda()
+        indices_arr = indices_arr[:, 1:].cuda()
+
+        n_queries = query_locs_.shape[0]
+        n_points = locs_float_.shape[0]
+
+        start_time = time.time()
+
+        geo_dist = torch.zeros((n_queries, n_points), dtype=torch.float, device=indices_arr.device)-1
+        visited = torch.zeros((n_queries, n_points), dtype=torch.bool, device=indices_arr.device)
+        
+        arange_tensor = torch.arange(0, n_queries, dtype=torch.long, device=locs_float_.device)
+
+        geo_dist[arange_tensor, query_inds] = 0.0
+        visited[arange_tensor, query_inds] = True
+            
+
+        distances, indices = distances_arr[query_inds], indices_arr[query_inds] # N_queries x n_neighbors
+
+        cond = (distances <= radius) & (indices >= 0) # N_queries x n_neighbors
+
+        queries_inds, neighbors_inds = torch.nonzero(cond, as_tuple=True) # n_temp
+        points_inds = indices[queries_inds, neighbors_inds]  # n_temp
+        points_distances = distances[queries_inds, neighbors_inds]  # n_temp
+
+        geo_dist[queries_inds, points_inds] = points_distances
+        visited[queries_inds, points_inds] = True
+
+
+        for it in range(max_step):
+            # print('points_inds', points_inds.shape)
+            stack_pointquery_inds = torch.stack([points_inds, queries_inds], dim=0)
+
+            # print('stack_pointquery_inds', stack_pointquery_inds.shape)
+            indices_unique, corres_inds = unique_with_inds(stack_pointquery_inds)
+
+
+            # print('corres_inds', corres_inds.shape)
+
+            points_inds = points_inds[corres_inds]
+            queries_inds = queries_inds[corres_inds]
+            points_distances = points_distances[corres_inds]
+
+
+            distances_new, indices_new = distances_arr[points_inds], indices_arr[points_inds] # n_temp x n_neighbors
+            distances_new_cumsum = distances_new + points_distances[:, None] # n_temp x n_neighbors
+
+            queries_inds = queries_inds[:, None].repeat(1, neighbor-1) # n_temp x n_neighbors
+
+            visited_cond = visited[queries_inds.flatten(), indices_new.flatten()].reshape(*distances_new.shape)
+            cond = (distances_new <= radius) & (indices_new >= 0) & (visited_cond == False)# n_temp x n_neighbors
+
+            # print(cond.shape)
+            temp_inds, neighbors_inds = torch.nonzero(cond, as_tuple=True) # n_temp2
+            points_inds = indices_new[temp_inds, neighbors_inds]  # n_temp2
+            points_distances = distances_new_cumsum[temp_inds, neighbors_inds]  # n_temp2
+            queries_inds2 = queries_inds[temp_inds, neighbors_inds]  # n_temp2
+
+            geo_dist[queries_inds2, points_inds] = points_distances
+            visited[queries_inds2, points_inds] = True
+
+            queries_inds = queries_inds2
+        
+
+
+        end_time = time.time()
+
+        print('time', end_time - start_time)
         geo_dist = geo_dist.cpu().numpy()
         return geo_dist
 

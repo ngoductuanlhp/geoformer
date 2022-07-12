@@ -18,9 +18,11 @@ from checkpoint import checkpoint
 from model.geoformer.geoformer import GeoFormer
 from datasets.scannetv2_inst import InstDataset
 
-FOLD0 = [2,3,4,7,9,11,12,13,18]
-FOLD1 = [5,6,8,10,14,15,16,17,19]
-BENCHMARK_SEMANTIC_LABELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]
+# FOLD0 = [2,3,4,7,9,11,12,13,18]
+# FOLD1 = [5,6,8,10,14,15,16,17,19]
+# BENCHMARK_SEMANTIC_LABELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]
+
+from datasets.scannetv2 import BENCHMARK_SEMANTIC_LABELS, FOLD
 
 
 def init():
@@ -71,10 +73,10 @@ def do_test(model, dataloader, cur_epoch):
 
                 
 
-                SEMANTIC_FOLD = FOLD1 if cfg.cvfold == 1 else FOLD0
+                # SEMANTIC_FOLD = FOLD1 if cfg.cvfold == 1 else FOLD0
 
                 # print(semantic_test)
-                temp = torch.tensor(SEMANTIC_FOLD, device=scores_final.device)[cls_final-4]
+                temp = torch.tensor(FOLD[cfg.cvfold], device=scores_final.device)[cls_final-4]
                 # temp = torch.tensor(semantic_test, device=scores_pred.device)[semantic_pred[proposals_idx[:, 1][proposals_offset[:-1].long()].long()] - 4]
                 semantic_id = torch.tensor(BENCHMARK_SEMANTIC_LABELS, device=scores_final.device)[temp] # (nProposal), long
 
