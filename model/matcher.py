@@ -99,15 +99,8 @@ class HungarianMatcher(nn.Module):
                 inst_masks[count,:] = temp
 
                 sem_labels[count] = semantic_masked[torch.nonzero(temp)[0]]
-                # print('sem_labels[count]', sem_labels[count])
                 count += 1
-            # inst_masks_clone = inst_masks.clone()
-            # inst_masks = inst_masks.reshape(1, -1, n_mask).repeat(self.n_queries, 1, 1)
-            
-            # mask_logit = mask_logit.reshape(-1, 1, n_mask).repeat(1, n_inst_gt, 1)
 
-            # inst_masks = inst_masks.flatten(0, 1)
-            # mask_logit = mask_logit.flatten(0, 1)
             dice_cost = compute_dice(mask_logit.reshape(-1, 1, n_mask).repeat(1, n_inst_gt, 1).flatten(0, 1), 
                                     inst_masks.reshape(1, -1, n_mask).repeat(self.n_queries, 1, 1).flatten(0, 1))
 
@@ -129,15 +122,6 @@ class HungarianMatcher(nn.Module):
 
             row_inds, col_inds = linear_sum_assignment(final_cost)
 
-            # inst_masks_clone = inst_masks_clone[col_inds]
-
-            # sem_labels_clone = sem_labels_clone[col_inds]
-
-            # row_inds_torch = torch.from_numpy(row_inds).long().to(device=mask_logit.device)
-            # col_inds_torch = torch.from_numpy(col_inds).long().to(device=mask_logit.device)
-
-            # per_query_gt_inds[batch, row_inds_torch] = col_inds_torch
-            # query_matched_mask[batch, row_inds_torch] = 1
 
             return row_inds, inst_masks[col_inds], sem_labels[col_inds]
 

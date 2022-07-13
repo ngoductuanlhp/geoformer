@@ -156,9 +156,6 @@ class InstSetCriterion(nn.Module):
             instance_masked_b = instance_masked[batch_ids==batch]
             semantic_masked_b = semantic_masked[batch_ids==batch]
 
-            # print('mask_logit_b', mask_logit_b.shape, cls_logit_b.shape)
-            # print('instance_masked_b', instance_masked_b.shape)
-
             if mask_logit_b == None:
                 continue
 
@@ -180,8 +177,8 @@ class InstSetCriterion(nn.Module):
             num_gt += num_gt_batch
              
             loss_dict['dice_loss'] += compute_dice_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
-            # loss_dict['focal_loss'] += compute_sigmoid_focal_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
-            loss_dict['focal_loss'] += compute_score_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
+            loss_dict['focal_loss'] += compute_sigmoid_focal_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
+            # loss_dict['focal_loss'] += compute_score_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
             cls_label = torch.zeros((self.n_queries)).to(cls_logits.device)
             cls_label[pred_inds] = sem_cls_gt
 
@@ -238,8 +235,6 @@ class InstSetCriterion(nn.Module):
 
         if epoch <= cfg.prepare_epochs:
             loss_dict_out['sem_loss'] = (semantic_loss.item(), semantic_labels.shape[0])
-            # loss_dict_out['offset_norm_loss'] = (offset_norm_loss.item(), valid.sum())
-            # loss_dict_out['offset_dir_loss'] = (offset_dir_loss.item(), valid.sum())
             loss_dict_out['loss'] = (loss.item(), semantic_labels.shape[0])
             return loss, loss_dict_out
 
@@ -269,8 +264,6 @@ class InstSetCriterion(nn.Module):
         loss_dict_out['dice_loss'] = (loss_dict['dice_loss'].item(), num_gt)
         loss_dict_out['cls_loss'] = (loss_dict['cls_loss'].item(), self.n_queries)
         loss_dict_out['sem_loss'] = (semantic_loss.item(), semantic_labels.shape[0])
-        # loss_dict_out['offset_norm_loss'] = (offset_norm_loss.item(), valid.sum())
-        # loss_dict_out['offset_dir_loss'] = (offset_dir_loss.item(), valid.sum())
         loss_dict_out['loss'] = (loss.item(), semantic_labels.shape[0])
 
         return loss, loss_dict_out
