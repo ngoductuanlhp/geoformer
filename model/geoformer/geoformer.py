@@ -480,7 +480,7 @@ class GeoFormer(nn.Module):
         query_locs = context_locs[:, :cfg.n_query_points, :]
 
         # NOTE process geodist
-        max_step = 32 if self.training else 64 # add little longer in inference
+        max_step = 128 if self.training else 256 # add little longer in inference
         geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
                                                 max_step=max_step, neighbor=32, radius=0.1, n_queries=cfg.n_query_points)
 
