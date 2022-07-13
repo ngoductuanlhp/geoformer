@@ -22,7 +22,7 @@ DETR:
 
   filter_biases_wd: False
   weight_decay: 0.1
-  base_lr: 0.0002
+  base_lr: 0.0005
   warm_lr: 0.000001
   warm_lr_epochs: 3
   final_lr: 0.000001
@@ -38,7 +38,7 @@ DATA:
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 2
+  batch_size: 4
   full_scale: [128, 512]
   full_scale_support: [32, 64]
   max_npoint: 150000
@@ -65,8 +65,12 @@ TRAIN:
   save_freq_last: 1
   # fix_module: []
   fix_module: [input_conv, unet, output_layer, semantic, semantic_linear,
-    set_aggregator,
-    mask_tower, controller, before_embedding_tower,
+    set_aggregator, 
+    # pos_embedding, 
+    # encoder_to_decoder_projection, 
+    # query_projection,
+    # decoder
+    # mask_tower, controller, before_embedding_tower,
   ]
 
 TEST:

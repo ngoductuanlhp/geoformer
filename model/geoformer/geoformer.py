@@ -105,7 +105,7 @@ class GeoFormer(nn.Module):
         for i in range(self.embedding_conv_num):
             if i ==0:
                 if USE_COORDS:
-                    weight_nums.append((self.output_dim+3) * self.output_dim)
+                    weight_nums.append((self.output_dim+3+1) * self.output_dim)
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
                 bias_nums.append(self.output_dim)
@@ -311,9 +311,9 @@ class GeoFormer(nn.Module):
 
         if use_geo:
             n_queries, n_contexts = geo_dist.shape[:2]
-            # relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
-            # relative_coords_geo[relative_coords_geo < 0] = 10
-
+            relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
+            relative_coords_geo[relative_coords_geo < 0] = 10
+            
             # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
 
             # max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
@@ -339,7 +339,8 @@ class GeoFormer(nn.Module):
             # x = torch.cat([relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
             
             relative_coords = relative_coords.permute(0,2,1)
-            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+            # x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+            x = torch.cat([relative_coords, relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
         else:
             relative_coords = relative_coords.permute(0,2,1)
             x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
@@ -479,7 +480,7 @@ class GeoFormer(nn.Module):
         query_locs = context_locs[:, :cfg.n_query_points, :]
 
         # NOTE process geodist
-        max_step = 32 if self.training else 64 # add little longer in inference
+        max_step = 128 if self.training else 256 # add little longer in inference
         geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
                                                 max_step=max_step, neighbor=32, radius=0.1, n_queries=cfg.n_query_points)
 
