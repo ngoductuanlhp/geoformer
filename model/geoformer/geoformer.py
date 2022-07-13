@@ -105,7 +105,7 @@ class GeoFormer(nn.Module):
         for i in range(self.embedding_conv_num):
             if i ==0:
                 if USE_COORDS:
-                    weight_nums.append((self.output_dim+3+1) * self.output_dim)
+                    weight_nums.append((self.output_dim+3+1) * self.output_dim) # 3 for euclid dist, 1 for geo dist
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
                 bias_nums.append(self.output_dim)

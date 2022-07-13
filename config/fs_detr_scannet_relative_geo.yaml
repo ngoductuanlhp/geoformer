@@ -77,11 +77,11 @@ TRAIN:
   fix_module: [input_conv, unet, output_layer, semantic, semantic_linear, 
     set_aggregator,
     similarity_net,
-    pos_embedding, 
+    # pos_embedding, 
     # mask_tower, controller,
-    encoder_to_decoder_projection, 
-    query_projection,
-    decoder
+    # encoder_to_decoder_projection, 
+    # query_projection,
+    # decoder
   ]
 
 TEST:

@@ -103,7 +103,7 @@ class GeoFormerFS(nn.Module):
         for i in range(self.embedding_conv_num):
             if i ==0:
                 if self.use_coords:
-                    weight_nums.append((self.output_dim+3+1) * self.output_dim)
+                    weight_nums.append((self.output_dim+3) * self.output_dim)
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
                 bias_nums.append(self.output_dim)
@@ -321,33 +321,34 @@ class GeoFormerFS(nn.Module):
         
         if use_geo:
             n_queries, n_contexts = geo_dist.shape[:2]
-            relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
-            relative_coords_geo[relative_coords_geo < 0] = 10
-                # lative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
-                # max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
-                # max_geo_val = torch.max(max_geo_dist_context)
-                # max_geo_dist_context[max_geo_dist_context < 0] = 5
-                # max_geo_dist_context = torch.sqrt(max_geo_dist_context)
+            # relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
+            # relative_coords_geo[relative_coords_geo < 0] = 10
 
-                # max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+            # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+            max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
+            # max_geo_val = torch.max(max_geo_dist_context)
+            max_geo_dist_context[max_geo_dist_context < 0] = 10
+            max_geo_dist_context = torch.sqrt(max_geo_dist_context)
 
-                # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+            max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
 
-                # cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
-                # relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-                # # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
+            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
-                # # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
-                # # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
-                # # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-                # # relative_coords = relative_coords_geo
-                # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+            cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
+            relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+            # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
 
-                # relative_coords = relative_coords.permute(0,2,1)
-                # x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+            # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
+            # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
+            # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+            # relative_coords = relative_coords_geo
+            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
             relative_coords = relative_coords.permute(0,2,1)
-            x = torch.cat([relative_coords, relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
+            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+
+            # relative_coords = relative_coords.permute(0,2,1)
+            # x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
             
         else:
             relative_coords = relative_coords.permute(0,2,1)
