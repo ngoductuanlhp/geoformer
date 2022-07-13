@@ -63,8 +63,7 @@ TRAIN:
   save_freq: 10  # also eval_freq
   save_freq_last: 2
   fix_module: []
-  # fix_module: [input_conv, unet, output_layer, semantic, semantic_linear,
-  # offset, offset_linear]
+  # fix_module: [input_conv, unet, output_layer, semantic, semantic_linear]
 
 TEST:
   split: val

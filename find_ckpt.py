@@ -108,7 +108,6 @@ def do_test(model, dataset):
 
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     dataloader = dataset.testLoader()
-    dataset.load_scene_graph_info()
     
     
     num_test_scenes = len(dataloader)
@@ -243,10 +242,7 @@ if __name__ == '__main__':
     logger.info('=> creating model ...')
 
     if cfg.test_model == 'geoformer':
-        # from model.geoformer.geoformer_fs import GeoFormerFS
-        # from model.geoformer.geoformer_fs_online_geo import GeoFormerFS
-        # from model.geoformer.geoformer_fs_online_geo_onlysim import GeoFormerFS
-        from model.geoformer.geoformer_fs_maskaggregate import GeoFormerFS
+        from model.geoformer.geoformer_fs import GeoFormerFS
 
         model = GeoFormerFS()
     elif cfg.test_model == 'dyco3d':
@@ -260,8 +256,8 @@ if __name__ == '__main__':
     logger.info('# parameters (model): {}'.format(sum([x.nelement() for x in model.parameters()])))
 
     best_metric = -1
-    for epoch in range(28, 44, 2):
-        checkpoint_fn = f'exp/finetune_fs_detr_relative_maskfinal_normalsimnet_small_cosin/checkpoint_epoch_{epoch}.pth'
+    for epoch in range(14, 46, 4):
+        checkpoint_fn = f'exp/fs_finetune_detr_geo_decoderdyco/checkpoint_epoch_{epoch}.pth'
         if os.path.isfile(checkpoint_fn):
             logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
             state = torch.load(checkpoint_fn)

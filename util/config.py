@@ -19,7 +19,6 @@ def get_parser():
 
     parser.add_argument('--resume', type=str, default=None)
     parser.add_argument('--output_path', type=str, default=None)
-    parser.add_argument('--use_backbone_transformer', action='store_true', default=False)
     parser.add_argument('--train', default=True)
 
     args_cfg = parser.parse_args()

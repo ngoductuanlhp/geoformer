@@ -58,16 +58,8 @@ cd lib/pointnet2
 python setup.py install
 ```
 
-6\) Install FAISS (optional):
+6\) Install FAISS:
 
 ```
 conda install -c faiss-gpu cudatoolkit=10.2 # for CUDA 10.2
 ```
-
-7\) Install CuGraph (optional):
-
-```
-conda install -c nvidia -c rapidsai -c numba -c conda-forge cugraph cudatoolkit=10.2
-```
-
-If you encounter problem during install CuGraph, please follow [CuGraph](https://hub.docker.com/r/rapidsai/rapidsai/) to use CuGraph in docker.

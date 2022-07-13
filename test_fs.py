@@ -63,11 +63,6 @@ def load_set_support(model, dataset):
 
                     support_mask = (support_instance_label == support_instance_id).astype(int)
 
-                    # support_xyz_middle[support_mask.astype(bool)==False] = 0
-                    # # support_xyz_scaled = support_xyz_scaled[support_mask.astype(bool)]
-                    # support_rgb[support_mask.astype(bool)==False] = 0
-                    # # support_mask = np.ones((support_rgb.shape[0]), dtype=np.int)
-
                     support_batch_offsets   = torch.tensor([0, support_xyz_middle.shape[0]], dtype=torch.int)
                     support_masks_offset    = torch.tensor([0, np.count_nonzero(support_mask)], dtype=torch.int)  # int (B+1)
                     support_locs            = torch.cat([torch.LongTensor(support_xyz_scaled.shape[0], 1).fill_(0), torch.from_numpy(support_xyz_scaled).long()], 1)
@@ -108,7 +103,6 @@ def do_test(model, dataset):
 
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     dataloader = dataset.testLoader()
-    # dataset.load_scene_graph_info()
     
     
     num_test_scenes = len(dataloader)
@@ -128,7 +122,7 @@ def do_test(model, dataset):
 
             test_scene_name = scene_infos['query_scene']
             active_label    = scene_infos['active_label']
-            logger.info("Test scene: {} {}/{}".format(test_scene_name, i, num_test_scenes))
+            logger.info("Test scene: {} {}/{}".format(test_scene_name, i+1, num_test_scenes))
 
             N = query_dict['feats'].shape[0]
 
@@ -137,7 +131,7 @@ def do_test(model, dataset):
                     query_dict[key] = query_dict[key].to(net_device)
 
             for j, (label, support_dict) in enumerate(zip(active_label, list_support_dicts)):
-                for k in range(cfg.run_num):
+                for k in range(cfg.run_num): # NOTE number of runs
                     remember = False if (j == 0 and k == 0) else True
 
                     support_embeddings = None
@@ -196,6 +190,7 @@ def do_test(model, dataset):
                     pred_info['conf']       = cluster_scores[k]
                     pred_info['label_id']   = cluster_semantic_id[k]
                     pred_info['mask']       = clusters[k]
+                    
                     gt_file = os.path.join(cfg.data_root, cfg.dataset, 'val_gt', test_scene_name + '.txt')
                     gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
                     matches[k][test_scene_name]         = {}
@@ -239,8 +234,7 @@ if __name__ == '__main__':
     logger.info('=> creating model ...')
 
     if cfg.test_model == 'geoformer':
-        # from model.geoformer.geoformer_fs import GeoFormerFS
-        from model.geoformer.geoformer_fs_maskaggregate import GeoFormerFS
+        from model.geoformer.geoformer_fs import GeoFormerFS
 
         model = GeoFormerFS()
     elif cfg.test_model == 'dyco3d':

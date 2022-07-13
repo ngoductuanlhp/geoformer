@@ -10,7 +10,7 @@ META:
   k_shot: 1
   similarity_thresh: 0.2
   fix_support: True
-  run_num: 10
+  run_num: 5
   type_support: fullscene_fold
   file_support: support_vectors_df
   test_model: geoformer
@@ -26,7 +26,7 @@ DETR:
 
   n_downsampling: 20000
   n_decode_point: 2048
-  n_query_points: 192
+  n_query_points: 256
 
   filter_biases_wd: False
   weight_decay: 0.1

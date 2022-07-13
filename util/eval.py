@@ -362,4 +362,11 @@ def print_results(avgs, logger):
     line += "{:>15.3f}".format(all_ap_50o)  + sep
     line += "{:>15.3f}".format(all_ap_25o)  + sep
     logger.info(line)
+
+    if 'all_ap_std' in  avgs.keys():
+        line  = "{:<15}".format("std") + sep + col1
+        line += "{:>15.3f}".format(avgs["all_ap_std"])  + sep
+        line += "{:>15.3f}".format(avgs["all_ap_50%_std"])  + sep
+        line += "{:>15.3f}".format(avgs["all_ap_25%_std"])  + sep
+        logger.info(line)
     logger.info("")

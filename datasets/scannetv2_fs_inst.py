@@ -92,7 +92,7 @@ class FSInstDataset:
 
     def testLoader(self):
 
-        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names][:100]
         self.test_combs = self.get_test_comb()
         test_set = list(np.arange(len(self.test_names)))
         dataloader = DataLoader(test_set, batch_size=1, collate_fn=self.testMergeFS, num_workers=1,
@@ -575,7 +575,6 @@ class FSInstDataset:
 
                 support_mask = (support_instance_label == support_instance_id).astype(int)
 
-                # print("test", np.count_nonzero(support_mask), support_mask.shape[0])
                 support_pc_min = torch.from_numpy(support_xyz_middle.min(axis=0)).unsqueeze(0)
                 support_pc_max = torch.from_numpy(support_xyz_middle.max(axis=0)).unsqueeze(0)
 
@@ -586,7 +585,6 @@ class FSInstDataset:
                 support_feats           = torch.from_numpy(support_rgb).to(torch.float32)                             # float (N, C)
                 support_masks           = torch.from_numpy(support_mask)
                 support_spatial_shape = np.clip((support_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale_support[0], None)
-                # support_spatial_shape = np.clip((support_locs.max(0)[0][1:] + 1).numpy(), cfg.full_scale[0], None)
 
                 ### voxelize
                 support_voxel_locs, support_p2v_map, support_v2p_map = pointgroup_ops.voxelization_idx(support_locs, 1, self.mode)
