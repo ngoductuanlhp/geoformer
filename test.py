@@ -14,13 +14,10 @@ import util.eval as eval
 import os.path as osp
 from checkpoint import strip_prefix_if_present, align_and_update_state_dicts
 from checkpoint import checkpoint
+from util.utils_3d import load_ids, non_max_suppression_gpu
 
 from model.geoformer.geoformer import GeoFormer
 from datasets.scannetv2_inst import InstDataset
-
-# FOLD0 = [2,3,4,7,9,11,12,13,18]
-# FOLD1 = [5,6,8,10,14,15,16,17,19]
-# BENCHMARK_SEMANTIC_LABELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]
 
 from datasets.scannetv2 import BENCHMARK_SEMANTIC_LABELS, FOLD
 
@@ -41,19 +38,23 @@ def init():
 
 
 def do_test(model, dataloader, cur_epoch):
-    logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
-
 
     model.eval()
     net_device = next(model.parameters()).device
 
+
+    logger.info('>>>>>>>>>>>>>>>> Start Inference >>>>>>>>>>>>>>>>')
     num_test_scenes = len(dataloader)
 
     with torch.no_grad():
-        matches = {}
+        gt_file_arr = []
+        test_scene_name_arr = []
+        pred_info_arr = []
+
+
+        start_time = time.time()
         for i, batch_input in enumerate(dataloader):
             N = batch_input['feats'].shape[0]
-            # test_scene_name = dataset.test_file_names[int(batch['id'][0])].split('/')[-1][:12]
             test_scene_name = batch_input['test_scene_name'][0]
             torch.cuda.empty_cache()
 
@@ -63,59 +64,82 @@ def do_test(model, dataloader, cur_epoch):
 
             outputs = model(batch_input, cur_epoch, training=False)
 
-            if (cur_epoch > cfg.prepare_epochs):
-                if 'proposal_scores' not in outputs.keys():
-                    continue
+            if 'proposal_scores' not in outputs.keys():
+                continue
 
-                cls_final, scores_final, masks_final = outputs['proposal_scores']   # (nProposal, 1) float, cuda
-                if(isinstance(cls_final, list)):
-                    continue
+            cls_final, scores_final, masks_final = outputs['proposal_scores']   # (nProposal, 1) float, cuda
+            if(isinstance(cls_final, list)):
+                continue
 
-                
-
-                # SEMANTIC_FOLD = FOLD1 if cfg.cvfold == 1 else FOLD0
-
-                # print(semantic_test)
-                temp = torch.tensor(FOLD[cfg.cvfold], device=scores_final.device)[cls_final-4]
-                # temp = torch.tensor(semantic_test, device=scores_pred.device)[semantic_pred[proposals_idx[:, 1][proposals_offset[:-1].long()].long()] - 4]
-                semantic_id = torch.tensor(BENCHMARK_SEMANTIC_LABELS, device=scores_final.device)[temp] # (nProposal), long
+            temp = torch.tensor(FOLD[cfg.cvfold], device=scores_final.device)[cls_final-4]
+            semantic_id = torch.tensor(BENCHMARK_SEMANTIC_LABELS, device=scores_final.device)[temp] # (nProposal), long
 
 
-                ##### nms
-                if semantic_id.shape[0] == 0:
-                    pick_idxs = np.empty(0)
-                else:
-                    proposals_pred_f = masks_final.float()  # (nProposal, N), float, cuda
-                    intersection = torch.mm(proposals_pred_f, proposals_pred_f.t())  # (nProposal, nProposal), float, cuda
-                    proposals_pointnum = proposals_pred_f.sum(1)  # (nProposal), float, cuda
-                    proposals_pn_h = proposals_pointnum.unsqueeze(-1).repeat(1, proposals_pointnum.shape[0])
-                    proposals_pn_v = proposals_pointnum.unsqueeze(0).repeat(proposals_pointnum.shape[0], 1)
-                    cross_ious = intersection / (proposals_pn_h + proposals_pn_v - intersection)
-                    pick_idxs = non_max_suppression(cross_ious.cpu().numpy(), scores_final.cpu().numpy(), cfg.TEST_NMS_THRESH)  # int, (nCluster, N)
-                clusters = masks_final[pick_idxs]
-                cluster_scores = scores_final[pick_idxs]
-                cluster_semantic_id = semantic_id[pick_idxs]
+            test_scene_name_arr.append(test_scene_name)
+            gt_file_name = os.path.join(cfg.data_root, cfg.dataset, 'val_gt', test_scene_name + '.txt')
+            gt_file_arr.append(gt_file_name)
 
-                nclusters = clusters.shape[0]
 
-                ##### prepare for evaluation
-                if cfg.eval:
-                    pred_info = {}
-                    pred_info['conf'] = cluster_scores.cpu().numpy()
-                    pred_info['label_id'] = cluster_semantic_id.cpu().numpy()
-                    pred_info['mask'] = clusters.cpu().numpy()
-                    gt_file = os.path.join(cfg.data_root, cfg.dataset, cfg.split + '_gt', test_scene_name + '.txt')
-                    gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
-                    matches[test_scene_name] = {}
-                    matches[test_scene_name]['gt'] = gt2pred
-                    matches[test_scene_name]['pred'] = pred2gt
+            ##### nms
+            if semantic_id.shape[0] == 0:
+                pick_idxs = np.empty(0)
+            else:
+                proposals_pred_f = masks_final.float()  # (nProposal, N), float, cuda
+                intersection = torch.mm(proposals_pred_f, proposals_pred_f.t())  # (nProposal, nProposal), float, cuda
+                proposals_pointnum = proposals_pred_f.sum(1)  # (nProposal), float, cuda
+                proposals_pn_h = proposals_pointnum.unsqueeze(-1).repeat(1, proposals_pointnum.shape[0])
+                proposals_pn_v = proposals_pointnum.unsqueeze(0).repeat(proposals_pointnum.shape[0], 1)
+                cross_ious = intersection / (proposals_pn_h + proposals_pn_v - intersection)
+                pick_idxs = non_max_suppression_gpu(cross_ious, scores_final, cfg.TEST_NMS_THRESH)  # int, (nCluster, N)
 
-            ##### print
-            logger.info("instance iter: {}/{} point_num: {} ncluster: {}".format(batch_input['id'][0] + 1, num_test_scenes, N, nclusters))
-            # torch.cuda.empty_cache()
+            clusters = masks_final[pick_idxs].cpu().numpy()
+            cluster_scores = scores_final[pick_idxs].cpu().numpy()
+            cluster_semantic_id = semantic_id[pick_idxs].cpu().numpy()
+            nclusters = clusters.shape[0]
+
+            if cfg.eval:    
+                pred_info               = {}
+                pred_info['conf']       = cluster_scores
+                pred_info['label_id']   = cluster_semantic_id
+                pred_info['mask']       = clusters
+                pred_info_arr.append(pred_info)
+
+            # ##### prepare for evaluation
+            # if cfg.eval:
+            #     pred_info = {}
+            #     pred_info['conf'] = cluster_scores.cpu().numpy()
+            #     pred_info['label_id'] = cluster_semantic_id.cpu().numpy()
+            #     pred_info['mask'] = clusters.cpu().numpy()
+            #     gt_file = os.path.join(cfg.data_root, cfg.dataset, cfg.split + '_gt', test_scene_name + '.txt')
+            #     gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
+            #     matches[test_scene_name] = {}
+            #     matches[test_scene_name]['gt'] = gt2pred
+            #     matches[test_scene_name]['pred'] = pred2gt
+
+            
+            overlap_time = time.time() - start_time
+            logger.info(f"Test scene {i+1}/{num_test_scenes}: {test_scene_name} | Elapsed time: {int(overlap_time)}s | Remaining time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s")
+            logger.info(f"Num points: {N} | Num instances: {nclusters}")
 
         ##### evaluation
         if cfg.eval:
+            logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
+
+            matches = {}
+            for i in range(len(pred_info_arr)):
+                pred_info = pred_info_arr[i]
+                if pred_info is None:
+                    continue
+
+                gt_file_name = gt_file_arr[i]
+                test_scene_name = test_scene_name_arr[i]
+                gt_ids = load_ids(gt_file_name)
+
+                gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_ids)
+                matches[test_scene_name]         = {}
+                matches[test_scene_name]['gt']   = gt2pred
+                matches[test_scene_name]['pred'] = pred2gt
+
             ap_scores = eval.evaluate_matches(matches)
             avgs = eval.compute_averages(ap_scores)
             eval.print_results(avgs, logger)

@@ -74,7 +74,7 @@ def train_one_epoch(
             if torch.is_tensor(query_dict[key]):
                 query_dict[key] = query_dict[key].to(net_device)
 
-        outputs = model(support_dict, query_dict, scene_infos, remember=False, training=True)
+        outputs = model(support_dict, query_dict, remember=False, training=True)
         
         if 'mask_predictions' not in outputs.keys() or outputs['mask_predictions'] is None:
             continue

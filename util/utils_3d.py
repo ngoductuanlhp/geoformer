@@ -1,6 +1,7 @@
 # ScanNet util_3d: https://github.com/ScanNet/ScanNet/blob/master/BenchmarkScripts/util_3d.py
 
 import json, numpy as np
+import torch
 
 def load_ids(filename):
     ids = open(filename).read().splitlines()
@@ -66,6 +67,27 @@ def get_instances(ids, class_ids, class_labels, id2label):
         if inst.label_id in class_ids:
             instances[id2label[inst.label_id]].append(inst.to_dict())
     return instances
+
+def non_max_suppression_gpu(ious, scores, threshold):
+    ixs = torch.argsort(scores, descending=True)
+    
+    pick = []
+    while len(ixs) > 0:
+        i = ixs[0]
+        pick.append(i)
+        iou = ious[i, ixs[1:]]
+
+        remove_ixs = torch.nonzero(iou > threshold).view(-1) + 1
+
+        remove_ixs = torch.cat([remove_ixs, torch.tensor([0], device=remove_ixs.device)]).long()
+
+        mask = torch.ones_like(ixs, device=ixs.device, dtype=torch.bool)
+        mask[remove_ixs] = False
+        ixs = ixs[mask]
+        # ixs = np.delete(ixs, remove_ixs)
+        # ixs = np.delete(ixs, 0)
+
+    return np.array(pick, dtype=np.int32)
 
 
 

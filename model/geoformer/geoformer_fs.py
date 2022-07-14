@@ -325,8 +325,6 @@ class GeoFormerFS(nn.Module):
             relative_coords = relative_coords.permute(0,2,1)
             x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
 
-            # relative_coords = relative_coords.permute(0,2,1)
-            # x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
             
         else:
             relative_coords = relative_coords.permute(0,2,1)
@@ -452,7 +450,7 @@ class GeoFormerFS(nn.Module):
             support_embeddings = torch.cat(support_embeddings) # batch x channel
             return support_embeddings
 
-    def forward(self, support_dict, scene_dict, scene_infos, training=True, remember=False, support_embeddings=None):
+    def forward(self, support_dict, scene_dict, training=True, remember=False, support_embeddings=None):
         outputs = {}
 
         batch_idxs  = scene_dict['locs'][:, 0].int()
@@ -496,7 +494,7 @@ class GeoFormerFS(nn.Module):
             output_feats_   = output_feats[fg_idxs]
             semantic_preds_ = semantic_preds[fg_idxs]
 
-            context_mask_tower = torch.no_grad if 'mask_tower' in self.fix_module else torch.enable_grad
+            context_mask_tower = torch.enable_grad if self.training and 'mask_tower' not in self.fix_module else torch.no_grad 
             with context_mask_tower():
                 mask_features_   = self.mask_tower(torch.unsqueeze(output_feats_, dim=2).permute(2,1,0)).permute(2,1,0)
 
@@ -514,9 +512,11 @@ class GeoFormerFS(nn.Module):
             
 
             # NOTE process geodist
-            max_step = 128 if self.training else 256 # add little longer in inference
             geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
-                                                 max_step=max_step, neighbor=32, radius=0.1, n_queries=cfg.n_query_points)
+                                                 max_step=128 if self.training else 256,
+                                                 neighbor=16,
+                                                 radius=0.05,
+                                                 n_queries=cfg.n_query_points)
 
             self.cache_data = (context_locs, context_feats, pre_enc_inds,
                                 fg_idxs, batch_offsets, 
@@ -572,7 +572,7 @@ class GeoFormerFS(nn.Module):
         return outputs
 
     def forward_backbone(self, batch_input, batch_size):
-        context_backbone = torch.no_grad if 'unet' in self.fix_module else torch.enable_grad
+        context_backbone = torch.enable_grad if self.training and 'unet' not in self.fix_module else torch.no_grad 
         with context_backbone():
             p2v_map     = batch_input['p2v_map']
 
@@ -593,7 +593,7 @@ class GeoFormerFS(nn.Module):
             return output_feats, semantic_scores, semantic_preds
 
     def forward_aggregator(self, locs_float_, output_feats_, batch_offsets_, batch_size):
-        context_aggregator = torch.no_grad if 'set_aggregator' in self.fix_module else torch.enable_grad
+        context_aggregator = torch.enable_grad if self.training and 'set_aggregator' not in self.fix_module else torch.no_grad 
         with context_aggregator():
             
             context_locs = []

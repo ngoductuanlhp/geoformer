@@ -256,8 +256,8 @@ if __name__ == '__main__':
     logger.info('# parameters (model): {}'.format(sum([x.nelement() for x in model.parameters()])))
 
     best_metric = -1
-    for epoch in range(14, 46, 4):
-        checkpoint_fn = f'exp/fs_finetune_detr_geo_decoderdyco/checkpoint_epoch_{epoch}.pth'
+    for epoch in range(2, 12, 2):
+        checkpoint_fn = f'exp/fs_finetune_detr_geo_decoderdyco_5shot/checkpoint_epoch_{epoch}.pth'
         if os.path.isfile(checkpoint_fn):
             logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
             state = torch.load(checkpoint_fn)

@@ -87,7 +87,7 @@ def cal_geodesic_single(gpu_index, pre_enc_inds, locs_float_, batch_offset_, max
 
 # NOTE fastest way to cal geodesic distance
 @torch.no_grad()
-def cal_geodesic_vectorize(gpu_index, pre_enc_inds, locs_float_, batch_offset_, max_step=32, neighbor=32, radius=0.1, n_queries=128):
+def cal_geodesic_vectorize(gpu_index, pre_enc_inds, locs_float_, batch_offset_, max_step=128, neighbor=64, radius=0.05, n_queries=128):
     
     batch_size = pre_enc_inds.shape[0]
     geo_dists = []

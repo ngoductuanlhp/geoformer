@@ -105,7 +105,7 @@ class GeoFormer(nn.Module):
         for i in range(self.embedding_conv_num):
             if i ==0:
                 if USE_COORDS:
-                    weight_nums.append((self.output_dim+3+1) * self.output_dim) # 3 for euclid dist, 1 for geo dist
+                    weight_nums.append((self.output_dim+3) * self.output_dim)
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
                 bias_nums.append(self.output_dim)
@@ -194,14 +194,10 @@ class GeoFormer(nn.Module):
 
     def init_knn(self):
         faiss_cfg = faiss.GpuIndexFlatConfig()
-        # faiss_cfg = faiss.GpuIndexIVFFlatConfig()
         faiss_cfg.useFloat16 = True
         faiss_cfg.device = 0
 
-        # self.knn_res = faiss.StandardGpuResources()
-        # self.geo_knn = faiss.index_cpu_to_gpu(self.knn_res, 0, faiss.IndexFlatL2(3))
         self.geo_knn = faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), 3, faiss_cfg)
-        # self.geo_knn = faiss.GpuIndexIVFFlat(faiss.StandardGpuResources(), 3, 384, faiss.METRIC_L2, faiss_cfg)
 
 
     def train(self, mode=True):
@@ -311,36 +307,31 @@ class GeoFormer(nn.Module):
 
         if use_geo:
             n_queries, n_contexts = geo_dist.shape[:2]
-            relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
-            relative_coords_geo[relative_coords_geo < 0] = 10
-            
+            # relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
+            # relative_coords_geo[relative_coords_geo < 0] = 10
+
             # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
+            max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
+            max_geo_val = torch.max(max_geo_dist_context)
+            max_geo_dist_context[max_geo_dist_context < 0] = max_geo_val
+            max_geo_dist_context = torch.sqrt(max_geo_dist_context)
 
-            # max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
-            # # max_geo_val = torch.max(max_geo_dist_context)
-            # max_geo_dist_context[max_geo_dist_context < 0] = 10
-            # max_geo_dist_context = torch.sqrt(max_geo_dist_context)
+            max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
 
-            # max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
+            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
-            # # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+            cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
+            relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
+            # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
 
-            # cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
-            # relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
-
-            # # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
+            # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
             # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
             # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # # relative_coords = relative_coords_geo
-            # # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
+            # relative_coords = relative_coords_geo
+            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
-            # relative_coords_geo = relative_coords_geo.permute(0,2,1)
-            # x = torch.cat([relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
-            
             relative_coords = relative_coords.permute(0,2,1)
-            # x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
-            x = torch.cat([relative_coords, relative_coords_geo, x], dim=1) ### num_inst * (3+c) * N_mask
+            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
         else:
             relative_coords = relative_coords.permute(0,2,1)
             x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
@@ -480,9 +471,11 @@ class GeoFormer(nn.Module):
         query_locs = context_locs[:, :cfg.n_query_points, :]
 
         # NOTE process geodist
-        max_step = 128 if self.training else 256 # add little longer in inference
         geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
-                                                max_step=max_step, neighbor=32, radius=0.1, n_queries=cfg.n_query_points)
+                                                 max_step=128 if self.training else 256,
+                                                 neighbor=16,
+                                                 radius=0.05,
+                                                 n_queries=cfg.n_query_points)
 
 
 
@@ -612,9 +605,7 @@ class GeoFormer(nn.Module):
         # Encode relative pos
         relative_coords = torch.abs(query_locs[:,:,None,:] - context_locs[:,None,:,:])   # b x n_queries x n_contexts x 3
         n_queries, n_contexts = relative_coords.shape[1], relative_coords.shape[2]
-        # relative_embedding_pos = self.pos_embedding(relative_coords.reshape(batch_size, n_queries*n_contexts, -1), input_range=pc_dims).reshape(batch_size, -1, n_queries, n_contexts,)
-        # relative_embedding_pos   = relative_embedding_pos.permute(2,3,0,1)
-
+        
         geo_dist_context = []
         for b in range(batch_size):
             geo_dist_context_b = geo_dists[b][:, pre_enc_inds[b].long()] # n_queries x n_contexts
@@ -622,8 +613,8 @@ class GeoFormer(nn.Module):
         
         geo_dist_context = torch.stack(geo_dist_context, dim=0)  # b x n_queries x n_contexts
         max_geo_dist_context = torch.max(geo_dist_context, dim=2)[0]  # b x n_queries 
-        # max_geo_val = torch.max(max_geo_dist_context)
-        max_geo_dist_context[max_geo_dist_context < 0] = 5 # NOTE assign very big value to invalid queries
+        max_geo_val = torch.max(max_geo_dist_context)
+        max_geo_dist_context[max_geo_dist_context < 0] = max_geo_val # NOTE assign very big value to invalid queries
 
         max_geo_dist_context = max_geo_dist_context[:,:,None,None].expand(batch_size, n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
 

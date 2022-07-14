@@ -77,7 +77,6 @@ class FSInstDataset:
     def trainLoader_debug(self):
 
         train_set = list(range(len(self.file_names)))[0:10]
-        # sampler = InfSampler(train_set, shuffle=True)
 
         dataloader = DataLoader(
             train_set,
