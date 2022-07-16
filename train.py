@@ -10,16 +10,13 @@ import util.utils as utils
 from util.dataloader_util import synchronize, get_rank
 from checkpoint import strip_prefix_if_present, align_and_update_state_dicts
 from checkpoint import checkpoint
-from solver import PolyLR
-from torch.optim.lr_scheduler import StepLR
 import datetime
 
-from criterion import InstCriterion, InstSetCriterion
+from criterion import InstSetCriterion
 from model.geoformer.geoformer import GeoFormer
 from datasets.scannetv2_inst import InstDataset
 
 from util.dist import init_distributed, is_distributed, is_primary, get_rank, barrier
-from torch.multiprocessing import set_start_method
 
 from util.utils_scheduler import adjust_learning_rate, cosine_lr_after_step
 
