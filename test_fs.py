@@ -59,6 +59,7 @@ def load_set_support(model, dataset):
                 list_scenes = support_set[cls]
                 for i in range(cfg.k_shot):
                     support_tuple = list_scenes[i]
+
                     support_scene_name, support_instance_id = support_tuple[0], support_tuple[1]
                     support_xyz_middle, support_xyz_scaled, support_rgb, support_label, support_instance_label \
                         = dataset.load_single(support_scene_name, aug=False, permutate=False, val=True, support=True)

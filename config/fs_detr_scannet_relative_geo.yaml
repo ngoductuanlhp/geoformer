@@ -70,10 +70,9 @@ TRAIN:
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
-  save_freq: 2  # also eval_freq
+  save_freq: 4  # also eval_freq
   save_freq_last: 1
 
-  # fix_module: []
   fix_module: [input_conv, unet, output_layer, semantic, semantic_linear, 
     set_aggregator,
     similarity_net,

@@ -12,11 +12,9 @@ import scipy.ndimage
 import scipy.interpolate
 import torch
 from torch.utils.data import DataLoader
-# from data_loader_util import DistributedSampler, get_world_size, make_batch_data_sampler, InfSampler
 import pickle
 
 from util.config import cfg
-# from util.log import logger
 from lib.pointgroup_ops.functions import pointgroup_ops
 from .scannetv2 import FOLD, FOLD_NAME
 
@@ -24,7 +22,6 @@ class InstDataset(TorchDataset):
     def __init__(self, split_set='train'):
         self.data_root = cfg.data_root
         self.dataset = cfg.dataset
-        self.filename_suffix = cfg.filename_suffix
 
         self.batch_size = cfg.batch_size
 
@@ -32,7 +29,6 @@ class InstDataset(TorchDataset):
         self.scale = cfg.scale
         self.max_npoint = cfg.max_npoint
         self.mode = cfg.mode
-        # self.start_iter = start_iter
 
         split_filenames = os.path.join(self.data_root, self.dataset, f"scannetv2_{split_set}.txt")
         with open(split_filenames, "r") as f:
@@ -41,7 +37,6 @@ class InstDataset(TorchDataset):
         all_file_names = os.listdir(os.path.join(self.data_root, self.dataset, 'scenes'))
         self.file_names = [os.path.join(self.data_root, self.dataset, 'scenes', f) for f in all_file_names if f.split('.')[0][:12] in self.scan_names]
         self.file_names = sorted(self.file_names)
-        # self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'scenes', '*' + self.filename_suffix)))
 
         self.SEMANTIC_LABELS = FOLD[cfg.cvfold]
         self.SEMANTIC_LABELS_MAP = {val:(idx+4) for idx,val in enumerate(self.SEMANTIC_LABELS)}
@@ -223,8 +218,6 @@ class InstDataset(TorchDataset):
         return instance_label
 
     def trainLoader(self):                                    
-        # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
-        # logger.info('Training samples: {}'.format(len(self.file_names)))
 
         train_set = list(range(len(self.file_names)))
         dataloader = DataLoader(
@@ -240,10 +233,8 @@ class InstDataset(TorchDataset):
         return dataloader
 
     def testLoader(self): 
-        # logger.info(str(('Training classes: ', self.TRAINING_SEMANTIC_LABELS)))
-        # logger.info('Training samples: {}'.format(len(self.file_names))) 
 
-        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names][:100]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
 
         test_set = list(np.arange(len(self.test_names)))
 
@@ -277,11 +268,8 @@ class InstDataset(TorchDataset):
         total_inst_num = 0
         for i, ind in enumerate(inds):
             file_path = self.file_names[ind]
-
             data = np.load(file_path)
 
-            # random_idx = np.random.permutation(data.shape[0])
-            # data = data[random_idx]
             xyz_origin = data[:, :3]
             rgb = data[:, 3:6]
             label = data[:, 6].astype(np.int)

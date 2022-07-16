@@ -62,7 +62,6 @@ class GeoFormerFS(nn.Module):
         )
 
         #### semantic segmentation
-        # self.linear = nn.Linear(m, classes) # bias(default): True
         self.semantic = nn.Sequential(
             nn.Linear(m, m, bias=True),
             norm_fn(m),
@@ -74,8 +73,7 @@ class GeoFormerFS(nn.Module):
         self.semantic_linear = nn.Linear(m, classes, bias=True)
 
         ### for instance embedding
-        self.output_dim = 16
-        # self.output_dim = cfg.dec_dim
+        self.output_dim = m
         self.mask_conv_num = 3
         conv_block = conv_with_kaiming_uniform("BN", activation=True)
         mask_tower = []
@@ -144,7 +142,7 @@ class GeoFormerFS(nn.Module):
             dim_feedforward=cfg.dec_ffn_dim,
             dropout=cfg.dec_dropout,
             normalize_before=True,
-            use_rel=cfg.use_rel,
+            use_rel=True,
         )
 
         self.decoder = TransformerDecoder(
@@ -196,14 +194,10 @@ class GeoFormerFS(nn.Module):
 
     def init_knn(self):
         faiss_cfg = faiss.GpuIndexFlatConfig()
-        # faiss_cfg = faiss.GpuIndexIVFFlatConfig()
         faiss_cfg.useFloat16 = True
         faiss_cfg.device = 0
 
-        # self.knn_res = faiss.StandardGpuResources()
-        # self.geo_knn = faiss.index_cpu_to_gpu(self.knn_res, 0, faiss.IndexFlatL2(3))
         self.geo_knn = faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), 3, faiss_cfg)
-        # self.geo_knn = faiss.GpuIndexIVFFlat(faiss.StandardGpuResources(), 3, 384, faiss.METRIC_L2, faiss_cfg)
 
     def train(self, mode=True):
         super().train(mode)
@@ -299,10 +293,6 @@ class GeoFormerFS(nn.Module):
         
         if use_geo:
             n_queries, n_contexts = geo_dist.shape[:2]
-            # relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
-            # relative_coords_geo[relative_coords_geo < 0] = 10
-
-            # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
             max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
             max_geo_val = torch.max(max_geo_dist_context)
             max_geo_dist_context[max_geo_dist_context < 0] = max_geo_val
@@ -310,25 +300,12 @@ class GeoFormerFS(nn.Module):
 
             max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
 
-            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
-
             cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
             relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
 
-            # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
-            # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
-            # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # relative_coords = relative_coords_geo
-            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
-            relative_coords = relative_coords.permute(0,2,1)
-            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
-
-            
-        else:
-            relative_coords = relative_coords.permute(0,2,1)
-            x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
+        relative_coords = relative_coords.permute(0,2,1)
+        x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
 
         x = x.reshape(1, -1, n_mask) ### 1 * (num_inst*c') * Nmask
         for i, (w, b) in enumerate(zip(weights, biases)):
@@ -514,7 +491,7 @@ class GeoFormerFS(nn.Module):
             # NOTE process geodist
             geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
                                                  max_step=128 if self.training else 256,
-                                                 neighbor=16,
+                                                 neighbor=64,
                                                  radius=0.05,
                                                  n_queries=cfg.n_query_points)
 

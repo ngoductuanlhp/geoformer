@@ -9,8 +9,7 @@ META:
   test_fold: 0
   cvfold: 0
   k_shot: 1
-  cosine_thresh: 0.8
-  similarity_thresh: 0.24
+  similarity_thresh: 0.2
   fix_support: False
   negative_ratio: 2
 
@@ -37,7 +36,6 @@ DETR:
 DATA:
   data_root: data
   dataset: scannetv2
-  filename_suffix: .npy
 
   classes: 13
   ignore_label: -100
@@ -52,7 +50,7 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  m: 16 # 16 or 32
+  m: 16 
   block_residual: True
   block_reps: 2
 
@@ -60,7 +58,7 @@ STRUCTURE:
 
 TRAIN:
   start_epoch: 0
-  prepare_epochs: 40
+  prepare_epochs: 0
   epochs: 200
   num_workers: 4 # data loader workers
   optim: Adam # Adam or SGD
@@ -69,12 +67,19 @@ TRAIN:
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
-  save_freq: 10  # also eval_freq
-  save_freq_last: 2
+  save_freq: 4  # also eval_freq
+  save_freq_last: 1
 
-  # fix_module: []
-  fix_module: [input_conv, unet, output_layer, semantic, semantic_linear, 
-  set_aggregator]
+  fix_module: [
+    input_conv, unet, output_layer, semantic, semantic_linear, 
+    # set_aggregator,
+    # similarity_net,
+    # pos_embedding, 
+    # mask_tower, controller,
+    # encoder_to_decoder_projection, 
+    # query_projection,
+    # decoder
+  ]
 
 TEST:
   split: val

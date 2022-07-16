@@ -86,11 +86,6 @@ def compute_score_loss(inputs, targets, num_boxes):
 class InstCriterion(nn.Module):
     def __init__(self):
         super(InstCriterion, self).__init__()
-        # self.semantic_criterion = nn.BCEWithLogitsLoss()
-        # self.semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label)
-        # self.similarity_criterion = nn.BCEWithLogitsLoss()
-        # similarity_criterion = FocalLossV1()
-        # semantic_criterion = FocalLossV1(gamma=2, alpha=0.25)
         self.score_criterion = nn.BCELoss(reduction='none')
         self.semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label)
 

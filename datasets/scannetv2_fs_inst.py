@@ -23,7 +23,6 @@ class FSInstDataset:
     def __init__(self, split_set='train'):
         self.data_root = cfg.data_root
         self.dataset = cfg.dataset
-        self.filename_suffix = cfg.filename_suffix
 
         self.batch_size = cfg.batch_size
 
@@ -74,24 +73,9 @@ class FSInstDataset:
         )
         return dataloader
 
-    def trainLoader_debug(self):
-
-        train_set = list(range(len(self.file_names)))[0:10]
-
-        dataloader = DataLoader(
-            train_set,
-            shuffle=False,
-            batch_size=1,
-            num_workers=0,
-            drop_last=False,
-            pin_memory=True,
-            collate_fn=self.extractMergeFS
-        )
-        return dataloader
-
     def testLoader(self):
 
-        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names][:100]
+        self.test_names = [os.path.basename(i).split('.')[0][:12] for i in self.file_names]
         self.test_combs = self.get_test_comb()
         test_set = list(np.arange(len(self.test_names)))
         dataloader = DataLoader(test_set, batch_size=1, collate_fn=self.testMergeFS, num_workers=1,
@@ -280,7 +264,6 @@ class FSInstDataset:
         absolute_distance = np.linalg.norm(support_xyz_middle-centroid, axis = 1)
         valid_pc = (absolute_distance <= radius)
         valid_indices = np.nonzero(valid_pc)
-        # print("Region around inst: ", np.count_nonzero(valid_pc), support_xyz_middle.shape[0])
         return valid_indices
 
     def get_region_inst(self, support_xyz_middle, support_instance_label, support_instance_id, scale_factor = 2):
@@ -317,9 +300,6 @@ class FSInstDataset:
 
     def load_single(self, scene_name, aug=True, permutate=True, val=False, support=False):
         data = np.load(os.path.join(self.data_root, self.dataset, 'scenes', '%s.npy' %scene_name))
-        # if permutate:
-        #     random_idx = np.random.permutation(data.shape[0])
-        #     data = data[random_idx]
 
         xyz_origin = data[:, :3]
         rgb = data[:, 3:6]
@@ -427,7 +407,6 @@ class FSInstDataset:
             query_instance_label = self.getCroppedInstLabel(query_instance_label, valid_idxs=None)
             ### get instance information
             query_inst_num, inst_infos = self.getInstanceInfo(query_xyz_middle, query_instance_label.astype(np.int32))
-            # query_inst_infos = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             query_inst_pointnum = inst_infos["instance_pointnum"]   # (nInst), list
 
 

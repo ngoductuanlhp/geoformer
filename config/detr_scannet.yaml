@@ -30,7 +30,6 @@ DETR:
 DATA:
   data_root: data
   dataset: scannetv2
-  filename_suffix: _inst_nostuff.pth
 
   classes: 13
   ignore_label: -100
@@ -45,7 +44,7 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  m: 16 # 16 or 32
+  m: 16 
   block_residual: True
   block_reps: 2
   use_coords: True
@@ -54,7 +53,7 @@ TRAIN:
   start_epoch: 0
   prepare_epochs: 120
   epochs: 500
-  num_workers: 8 # data loader workers
+  num_workers: 4 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001
   multiplier: 0.5

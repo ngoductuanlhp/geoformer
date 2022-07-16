@@ -104,10 +104,7 @@ class FocalLossV1(nn.Module):
 
         bce = -(label * torch.log(pred) + (1.0 - label) * torch.log(1.0 - pred))
 
-        # cls_loss = focal_weight * torch.pow(bce, gamma)
-        # num_positive = (gt_mask==1).sum().float()
         cls_loss = (focal_weight * bce)
-        # cls_loss = cls_loss.sum()
         cls_loss = cls_loss.sum() / (label.shape[0] + 1e-6)
         
         return cls_loss
@@ -141,18 +138,14 @@ class InstSetCriterion(nn.Module):
         mask_logits_list  = mask_prediction['mask_logits'] # list of n_queries x N_mask
         cls_logits   = mask_prediction['cls_logits'] # batch x n_queries x n_classes
 
-        # obj_logits   = 1 - torch.mean(cls_logits[..., 0:4], dim=2) # batch x n_queries
 
         for k in self.loss_weight:
             loss_dict[k] = torch.tensor(0.0, requires_grad=True).to(cls_logits.device)
 
-        # pred_inds_list, inst_masks_gt_list, sem_cls_gt_list = self.matcher.forward_seg(mask_logit, cls_logits, obj_logit, instance_masked, semantic_masked, batch_ids)
-        # per_query_gt_inds, query_matched_mask = None, None
         num_gt = 0 
         for batch in range(self.batch_size):
             mask_logit_b = mask_logits_list[batch]
             cls_logit_b = cls_logits[batch] # n_queries x n_classes
-            # obj_logit_b = obj_logits[batch]
             instance_masked_b = instance_masked[batch_ids==batch]
             semantic_masked_b = semantic_masked[batch_ids==batch]
 
@@ -178,7 +171,6 @@ class InstSetCriterion(nn.Module):
              
             loss_dict['dice_loss'] += compute_dice_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
             loss_dict['focal_loss'] += compute_sigmoid_focal_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
-            # loss_dict['focal_loss'] += compute_score_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
             cls_label = torch.zeros((self.n_queries)).to(cls_logits.device)
             cls_label[pred_inds] = sem_cls_gt
 
@@ -202,11 +194,6 @@ class InstSetCriterion(nn.Module):
         semantic_labels = batch_inputs['labels']
         instance_labels = batch_inputs['instance_labels']
 
-        '''offset loss'''
-        # # pt_offsets = model_outputs['pt_offsets']
-        # instance_info = batch_inputs['instance_infos']
-        # coords = batch_inputs['locs_float']
-        
 
         loss_dict_out = {}
         loss = torch.tensor(0.0, requires_grad=True).to(semantic_scores.device)
@@ -216,21 +203,6 @@ class InstSetCriterion(nn.Module):
         else:
             semantic_loss = torch.tensor(0.0, requires_grad=True).to(semantic_scores.device)
         
-        # gt_offsets = instance_info[:, 0:3] - coords   # (N, 3)
-        # pt_diff = pt_offsets - gt_offsets   # (N, 3)
-        # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)   # (N)
-        # valid = (instance_labels != cfg.ignore_label).float()
-        # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
-
-        # gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)   # (N), float
-        # gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
-        # pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
-        # pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
-        # direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)   # (N)
-        # offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
-
-
-        # loss += semantic_loss + offset_norm_loss + offset_dir_loss
         loss += semantic_loss
 
         if epoch <= cfg.prepare_epochs:
@@ -273,18 +245,12 @@ class InstSetCriterion(nn.Module):
 class InstCriterion(nn.Module):
     def __init__(self):
         super(InstCriterion, self).__init__()
-        # self.semantic_criterion = nn.BCEWithLogitsLoss()
-        # self.semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label)
-        # self.similarity_criterion = nn.BCEWithLogitsLoss()
-        # similarity_criterion = FocalLossV1()
-        # semantic_criterion = FocalLossV1(gamma=2, alpha=0.25)
         self.score_criterion = nn.BCELoss(reduction='none')
 
     def forward(self, model_outputs, batch_inputs):
         loss_dict = {}
 
         # '''semantic loss'''
-        # semantic_scores = model_outputs['semantic_scores']
         semantic_labels = batch_inputs['labels']
         instance_labels = batch_inputs['instance_labels']
 
@@ -316,8 +282,6 @@ class InstCriterion(nn.Module):
             cover_percents.append(cover_percent)
 
             
-            # if cover_percent < 0.3:
-            #     continue
         cover_percents = torch.tensor(cover_percents).float().cuda()
 
         positive_inds = torch.nonzero((sampling_ins_label >= 0) & (sampling_seg_label >= 4) & (cover_percents >= 0.3)).long()
@@ -342,15 +306,6 @@ class InstCriterion(nn.Module):
 
             mask_logit = mask_logits[l]
 
-            # inst_gt_masks       = []
-            # weights             = []
-            # mask_select_inds    = []
-            # inst_gt_mask = torch.zeros_like(mask_logit)
-            # weights = torch.zeros_like(mask_logit)
-
-            # n_mask = mask_logit.shape[-1]
-
-            # assert inst_pred_seg_label.size(0) == num_insts
             valid_num_dice_loss = 0
 
             dice_loss = loss.new_tensor(0.0)

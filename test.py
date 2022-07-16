@@ -104,18 +104,6 @@ def do_test(model, dataloader, cur_epoch):
                 pred_info['mask']       = clusters
                 pred_info_arr.append(pred_info)
 
-            # ##### prepare for evaluation
-            # if cfg.eval:
-            #     pred_info = {}
-            #     pred_info['conf'] = cluster_scores.cpu().numpy()
-            #     pred_info['label_id'] = cluster_semantic_id.cpu().numpy()
-            #     pred_info['mask'] = clusters.cpu().numpy()
-            #     gt_file = os.path.join(cfg.data_root, cfg.dataset, cfg.split + '_gt', test_scene_name + '.txt')
-            #     gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
-            #     matches[test_scene_name] = {}
-            #     matches[test_scene_name]['gt'] = gt2pred
-            #     matches[test_scene_name]['pred'] = pred2gt
-
             
             overlap_time = time.time() - start_time
             logger.info(f"Test scene {i+1}/{num_test_scenes}: {test_scene_name} | Elapsed time: {int(overlap_time)}s | Remaining time: {int(overlap_time * float(num_test_scenes-(i+1))/(i+1))}s")
@@ -175,14 +163,12 @@ if __name__ == '__main__':
     if os.path.isfile(checkpoint_fn):
         logger.info("=> loading checkpoint '{}'".format(checkpoint_fn))
         state = torch.load(checkpoint_fn)
-        # cur_epoch = state['epoch'] + 1
+
         model_state_dict = model.state_dict()
         loaded_state_dict = strip_prefix_if_present(state['state_dict'], prefix="module.")
         align_and_update_state_dicts(model_state_dict, loaded_state_dict)
         model.load_state_dict(model_state_dict)
-        # model.load_state_dict(state['state_dict'])
 
-        # logger.info("=> loaded checkpoint '{}' (cur_epoch {})".format(checkpoint_fn, cur_epoch))
     else:
         raise RuntimeError
 

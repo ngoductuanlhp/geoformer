@@ -83,10 +83,7 @@ class FocalLossV1(nn.Module):
 
         bce = -(label * torch.log(pred) + (1.0 - label) * torch.log(1.0 - pred))
 
-        # cls_loss = focal_weight * torch.pow(bce, gamma)
-        # num_positive = (gt_mask==1).sum().float()
         cls_loss = (focal_weight * bce)
-        # cls_loss = cls_loss.sum()
         cls_loss = cls_loss.sum() / (label.shape[0] + 1e-6)
         
         return cls_loss
@@ -95,11 +92,8 @@ class FocalLossV1(nn.Module):
 class FSInstSetCriterion(nn.Module):
     def __init__(self, cal_simloss=True):
         super(FSInstSetCriterion, self).__init__()
-        # self.semantic_criterion = nn.BCEWithLogitsLoss()
+
         self.semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label)
-        # self.similarity_criterion = nn.BCEWithLogitsLoss()
-        # similarity_criterion = FocalLossV1()
-        # semantic_criterion = FocalLossV1(gamma=2, alpha=0.25)
         self.score_criterion = nn.BCELoss(reduction='none')
         self.similarity_criterion = nn.BCEWithLogitsLoss(reduction='none')
 
@@ -136,21 +130,18 @@ class FSInstSetCriterion(nn.Module):
                     num_negative += 1
                     negative_inds.append(n)
                     continue
-                # print('scene_instance_labels_b_[mask_points]', scene_instance_labels_b_[mask_points].shape)
-                # print('torch.mode(scene_instance_labels_b_[mask_points]', torch.mode(scene_instance_labels_b_[mask_points])[0].item())
+                
                 inst_label = torch.mode(scene_instance_labels_b_[mask_points])[0].item()
-                # print('torch.mode(scene_instance_labels_b_[mask_points])', torch.mode(scene_instance_labels_b_[mask_points]))
                 if inst_label == -100:
                     num_negative += 1
                     negative_inds.append(n)
                     continue
                 
-                # print('scene_instance_labels_b_', scene_instance_labels_b_.shape, inst_label)
                 mask_logits_label = (scene_instance_labels_b_ == inst_label).long()
                 intersection = ((mask_logits_b_n + mask_logits_label) > 1).long().sum()
                 union = ((mask_logits_b_n + mask_logits_label) > 0).long().sum()
                 iou = torch.true_divide(intersection, union)
-                # print('iou', iou)
+
                 if iou >= 0.5:
                     num_positive += 1
                     positive_inds.append(n)
@@ -173,18 +164,14 @@ class FSInstSetCriterion(nn.Module):
 
         loss_pos = loss_all * train_label
 
-        print("Positive/negative samples of SimLoss:", train_label.sum().detach().item(), n_hard_negatives.sum().detach().item())
         loss_neg[train_label.long()] = 0
-        # loss_neg = loss_neg * (1-train_label.long())
-        # print('loss_neg', loss_neg.shape)
         loss_neg, _ = loss_neg.sort(dim=1, descending=True)
-        # print('loss_neg', loss_neg)
+
         hardness_ranks = torch.LongTensor(range(cfg.n_query_points)).unsqueeze(0).expand_as(loss_neg).cuda()  # (N, 8732)
         hard_negatives = hardness_ranks < n_hard_negatives.unsqueeze(1)  # (N, 8732)
         loss_hard_neg = loss_neg[hard_negatives]
         similarity_loss = (loss_hard_neg.sum() + loss_pos.sum()) / train_label.sum().float()
 
-        # print('train_label.sum()', train_label.sum())
 
         return similarity_loss
 
@@ -193,13 +180,10 @@ class FSInstSetCriterion(nn.Module):
         loss_dict = {}
 
         mask_logits_list  = mask_prediction['mask_logits'] # list of n_queries x N_mask
-        # cls_logits   = mask_prediction['cls_logits'] # batch x n_queries x n_classes
 
         for k in self.loss_weight:
             loss_dict[k] = torch.tensor(0.0, requires_grad=True).to(similarity_score.device)
 
-        # pred_inds_list, inst_masks_gt_list, sem_cls_gt_list = self.matcher.forward_seg(mask_logit, cls_logits, obj_logit, instance_masked, semantic_masked, batch_ids)
-        # per_query_gt_inds, query_matched_mask = None, None
         num_gt = 0 
         for batch in range(self.batch_size):
             mask_logit_b = mask_logits_list[batch]
@@ -207,9 +191,6 @@ class FSInstSetCriterion(nn.Module):
             instance_masked_b = instance_masked[batch_ids==batch]
             semantic_masked_b = semantic_masked[batch_ids==batch]
 
-            # print('mask_logit_b', mask_logit_b.shape, cls_logit_b.shape)
-            # print('instance_masked_b', instance_masked_b.shape)
-            # print(batch, mask_logit_b.shape)
             if mask_logit_b == None:
                 continue
 
@@ -231,11 +212,6 @@ class FSInstSetCriterion(nn.Module):
             if num_gt_batch == 0:
                 continue
 
-            # print('mask_logit_pred', mask_logit_pred.shape)
-            # reduce memory         
-            # sampling_indices = torch.tensor(np.random.choice(mask_logit_pred.shape[1], 5000, replace=(5000>mask_logit_pred.shape[1])), dtype=torch.long).cuda()
-            
-            # print('mask', mask_logit_pred.shape, num_gt_batch)
             loss_dict['dice_loss'] += compute_dice_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
             loss_dict['focal_loss'] += compute_sigmoid_focal_loss(mask_logit_pred, inst_mask_gt, num_gt_batch)
 
@@ -283,6 +259,5 @@ class FSInstSetCriterion(nn.Module):
             
         loss_dict_out['focal_loss'] = (loss_dict['focal_loss'].item(), num_gt)
         loss_dict_out['dice_loss'] = (loss_dict['dice_loss'].item(), num_gt)
-        # loss_dict_out['cls_loss'] = (loss_dict['cls_loss'].item(), self.n_queries)
         loss_dict_out['loss'] = (loss.item(), semantic_labels.shape[0])
         return loss, loss_dict_out

@@ -63,3 +63,9 @@ python setup.py install
 ```
 conda install -c faiss-gpu cudatoolkit=10.2 # for CUDA 10.2
 ```
+
+7\) Install other dependencies:
+
+```
+pip install -r requirements.txt
+```

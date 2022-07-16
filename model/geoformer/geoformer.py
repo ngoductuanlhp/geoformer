@@ -59,7 +59,6 @@ class GeoFormer(nn.Module):
         )
 
         #### semantic segmentation
-        # self.linear = nn.Linear(m, classes) # bias(default): True
         self.semantic = nn.Sequential(
             nn.Linear(m, m, bias=True),
             norm_fn(m),
@@ -72,10 +71,8 @@ class GeoFormer(nn.Module):
 
 
         ################################
-        ################################
-        ################################
         ### for instance embedding
-        self.output_dim = 16
+        self.output_dim = m
         # self.output_dim = cfg.dec_dim
         self.mask_conv_num = 3
         conv_block = conv_with_kaiming_uniform("BN", activation=True)
@@ -97,14 +94,13 @@ class GeoFormer(nn.Module):
         self.add_module("before_embedding_tower", nn.Sequential(*before_embedding_tower))
 
         ### cond inst generate parameters for
-        USE_COORDS = True
-        self.use_coords = USE_COORDS
+        self.use_coords = True
         self.embedding_conv_num = 2
         weight_nums = []
         bias_nums = []
         for i in range(self.embedding_conv_num):
             if i ==0:
-                if USE_COORDS:
+                if self.use_coords:
                     weight_nums.append((self.output_dim+3) * self.output_dim)
                 else:
                     weight_nums.append(self.output_dim * self.output_dim)
@@ -146,7 +142,7 @@ class GeoFormer(nn.Module):
             dim_feedforward=cfg.dec_ffn_dim,
             dropout=cfg.dec_dropout,
             normalize_before=True,
-            use_rel=cfg.use_rel,
+            use_rel=True,
         )
 
         self.decoder = TransformerDecoder(
@@ -307,10 +303,6 @@ class GeoFormer(nn.Module):
 
         if use_geo:
             n_queries, n_contexts = geo_dist.shape[:2]
-            # relative_coords_geo = geo_dist[:, None, :] # N_inst, 1, N_mask
-            # relative_coords_geo[relative_coords_geo < 0] = 10
-
-            # relative_coords_geo = geo_dist.unsqueeze(-1).repeat(1,1,3)  # N_inst * N_mask * 3
             max_geo_dist_context = torch.max(geo_dist, dim=1)[0] # n_queries
             max_geo_val = torch.max(max_geo_dist_context)
             max_geo_dist_context[max_geo_dist_context < 0] = max_geo_val
@@ -318,17 +310,9 @@ class GeoFormer(nn.Module):
 
             max_geo_dist_context = max_geo_dist_context[:,None, None].expand(n_queries, n_contexts, 3) # b x n_queries x n_contexts x 3
 
-            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
             cond = (geo_dist < 0).unsqueeze(-1).expand(n_queries, n_contexts, 3)
             relative_coords[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # relative_coords[~cond] = relative_coords_geo[~cond] * torch.sign(relative_coords[~cond])
-
-            # relative_coords_geo[cond] = torch.abs(relative_coords[cond]) + max_geo_dist_context[cond]
-            # relative_coords_geo = relative_coords_geo * torch.sign(relative_coords)
-            # relative_coords_geo[cond] = relative_coords[cond] + max_geo_dist_context[cond] * torch.sign(relative_coords[cond])
-            # relative_coords = relative_coords_geo
-            # relative_coords_geo[relative_coords_geo < 0] = max_geo_dist_context[relative_coords_geo < 0] + relative_coords[relative_coords_geo < 0]
 
             relative_coords = relative_coords.permute(0,2,1)
             x = torch.cat([relative_coords, x], dim=1) ### num_inst * (3+c) * N_mask
@@ -392,8 +376,6 @@ class GeoFormer(nn.Module):
                 
                 mask_logits     = mask_logits.squeeze(dim=0) # (n_queries) x N_mask
                 mask_logits_list.append(mask_logits)
-
-                # mask_logits     = mask_logits.reshape(batch, n_queries, -1) # batch x n_queries x N_mask
                 
             output = {'cls_logits': cls_logits, 'mask_logits': mask_logits_list}
             outputs.append(output)
@@ -463,7 +445,7 @@ class GeoFormer(nn.Module):
         # NOTE aggregator 
         contexts = self.forward_aggregator(locs_float_, output_feats_, batch_offsets_, batch_size)
         if contexts is None:
-            outputs['mask_predictions']  = None
+            outputs['mask_predictions'] = None
             return outputs
         context_locs, context_feats, pre_enc_inds = contexts
 
@@ -473,7 +455,7 @@ class GeoFormer(nn.Module):
         # NOTE process geodist
         geo_dists = cal_geodesic_vectorize(self.geo_knn, pre_enc_inds, locs_float_, batch_offsets_,
                                                  max_step=128 if self.training else 256,
-                                                 neighbor=16,
+                                                 neighbor=64,
                                                  radius=0.05,
                                                  n_queries=cfg.n_query_points)
 
