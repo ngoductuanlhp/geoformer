@@ -1,6 +1,6 @@
 ## ScanNet v2 dataset
 
-1\) We prepared a preprocessed version of ScanNetv2 dataset. Download it at ...
+1\) We prepared a preprocessed version of ScanNetv2 dataset. Download it at [GoogleDrive](https://drive.google.com/file/d/1zV3hV2wBM0sd_zKeD1uCDSu-TCExaJzk/view?usp=sharing)
 
 2\) Extract the downloaded zip file to `geoformer/data` as follows.
 
