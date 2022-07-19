@@ -21,7 +21,7 @@ Please refer to [training guide](docs/TRAIN.md).
 We provided a quick inference on ScannetV2 dataset with our pretrained model ([GoogleDrive](https://drive.google.com/file/d/1HFr2F2YwtitbrblwtKknO5Vuo4xNswXG/view?usp=sharing))
 
 ```bash
-python test_fs.py --config config/test_fs_detr_scannet.yaml --output_path results/test --resume pretrains/best_fs_geoformer_scannet_fold0.pth
+python test_fs.py --config config/test_geoformer_fs_scannet.yaml --output_path results/test --resume pretrains/best_fs_geoformer_scannet_fold0.pth
 ```
 ## Acknowledgement
 This repo is built upon [DyCo3D](https://github.com/aim-uofa/DyCo3D), [spconv](https://github.com/traveller59/spconv), [3DETR](https://github.com/facebookresearch/3detr). 
