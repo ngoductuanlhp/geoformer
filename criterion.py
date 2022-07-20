@@ -200,7 +200,7 @@ class InstSetCriterion(nn.Module):
         loss_dict_out = {}
         loss = torch.tensor(0.0, requires_grad=True).to(semantic_scores.device)
 
-        if "semantic" in cfg.fix_module:
+        if "semantic" not in cfg.fix_module:
             semantic_loss = self.semantic_criterion(semantic_scores, semantic_labels)
         else:
             semantic_loss = torch.tensor(0.0, requires_grad=True).to(semantic_scores.device)
