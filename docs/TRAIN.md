@@ -20,7 +20,7 @@ Test the pretrain model (eval on base classes)
 python test.py --config config/test_geoformer_scannet.yaml  --output_path OUTPUT_PATH --resume PATH_TO_WEIGHT
 ```
 
-Test GeoFormer in few-shot setup
+Test GeoFormer in fewshot setup
 
 ```
 python test_fs.py --config config/test_geoformer_fs_scannet.yaml --output_path OUTPUT_PATH --resume PATH_TO_WEIGHT

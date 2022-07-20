@@ -14,10 +14,10 @@ Please refer to [installation guide](docs/INSTALL.md).
 ## Data Preparation
 Please refer to [data preparation](docs/DATA_PREPARATION.md).
 
-## Traing and Testing
+## Training and Testing
 Please refer to [training guide](docs/TRAIN.md).
 
-## Quick demo
+## Quick Demo
 
 We provided a quick inference on ScannetV2 dataset with our pretrained model ([GoogleDrive](https://drive.google.com/file/d/1HFr2F2YwtitbrblwtKknO5Vuo4xNswXG/view?usp=sharing))
 
