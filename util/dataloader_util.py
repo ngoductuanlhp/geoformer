@@ -1,6 +1,8 @@
 import torch
-from torch.utils.data.sampler import Sampler
 import torch.distributed as dist
+from torch.utils.data.sampler import BatchSampler, Sampler
+
+import math
 
 
 def synchronize():
@@ -17,12 +19,14 @@ def synchronize():
         return
     dist.barrier()
 
+
 def get_world_size():
     if not dist.is_available():
         return 1
     if not dist.is_initialized():
         return 1
     return dist.get_world_size()
+
 
 def get_rank():
     if not dist.is_available():
@@ -35,9 +39,9 @@ def get_rank():
 class InfSampler(Sampler):
     """Samples elements randomly, without replacement.
 
-      Arguments:
-          data_source (Dataset): dataset to sample from
-      """
+    Arguments:
+        data_source (Dataset): dataset to sample from
+    """
 
     def __init__(self, data_source, shuffle=False):
         self.data_source = data_source
@@ -63,13 +67,6 @@ class InfSampler(Sampler):
 
     next = __next__  # Python 2 compatibility
 
-
-
-import math
-import torch
-import torch.distributed as dist
-from torch.utils.data.sampler import Sampler
-from torch.utils.data.sampler import BatchSampler
 
 class IterationBasedBatchSampler(BatchSampler):
     """
@@ -98,6 +95,7 @@ class IterationBasedBatchSampler(BatchSampler):
 
     def __len__(self):
         return self.num_iterations
+
 
 class DistributedSampler(Sampler):
     """Sampler that restricts data loading to a subset of the dataset.
@@ -158,21 +156,9 @@ class DistributedSampler(Sampler):
         self.epoch = epoch
 
 
+def make_batch_data_sampler(sampler, images_per_batch, num_iters=None, start_iter=0):
 
-def make_batch_data_sampler(
-        sampler, images_per_batch, num_iters=None, start_iter=0
-):
-
-    batch_sampler = torch.utils.data.sampler.BatchSampler(
-        sampler, images_per_batch, drop_last=True
-    )
+    batch_sampler = torch.utils.data.sampler.BatchSampler(sampler, images_per_batch, drop_last=True)
     if num_iters is not None:
-        batch_sampler = IterationBasedBatchSampler(
-            batch_sampler, num_iters, start_iter
-        )
+        batch_sampler = IterationBasedBatchSampler(batch_sampler, num_iters, start_iter)
     return batch_sampler
-
-
-
-
-

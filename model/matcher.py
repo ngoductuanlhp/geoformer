@@ -11,13 +11,16 @@
 """
 Modules to compute the matching cost and solve the corresponding LSAP.
 """
+# from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou, generalized_box_cdist
+import functools
+
 import torch
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 
-# from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou, generalized_box_cdist
-import functools
+
 print = functools.partial(print, flush=True)
+
 
 def compute_dice(inputs, targets):
     """
@@ -44,12 +47,7 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self,
-                batch_size,
-                n_queries,
-                cost_class: float = 1,
-                cost_bbox: float = 1,
-                cost_giou: float = 1):
+    def __init__(self, batch_size, n_queries, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1):
         """Creates the matcher
         Params:
             cost_class: This is the relative weight of the classification error in the matching cost
@@ -95,14 +93,16 @@ class HungarianMatcher(nn.Module):
             # min_inst_id = min(unique_inst)
             count = 0
             for idx in unique_inst:
-                temp = (instance_masked == idx)
-                inst_masks[count,:] = temp
+                temp = instance_masked == idx
+                inst_masks[count, :] = temp
 
                 sem_labels[count] = semantic_masked[torch.nonzero(temp)[0]]
                 count += 1
 
-            dice_cost = compute_dice(mask_logit.reshape(-1, 1, n_mask).repeat(1, n_inst_gt, 1).flatten(0, 1), 
-                                    inst_masks.reshape(1, -1, n_mask).repeat(self.n_queries, 1, 1).flatten(0, 1))
+            dice_cost = compute_dice(
+                mask_logit.reshape(-1, 1, n_mask).repeat(1, n_inst_gt, 1).flatten(0, 1),
+                inst_masks.reshape(1, -1, n_mask).repeat(self.n_queries, 1, 1).flatten(0, 1),
+            )
 
             dice_cost = dice_cost.reshape(self.n_queries, n_inst_gt)
 
@@ -113,19 +113,18 @@ class HungarianMatcher(nn.Module):
                 final_cost = 1 * dice_cost
             else:
                 sem_logit = torch.nn.functional.softmax(sem_logit, dim=-1)
-                class_cost = -torch.gather(sem_logit, 1, sem_labels.unsqueeze(0).expand(self.n_queries, n_inst_gt).long())
+                class_cost = -torch.gather(
+                    sem_logit, 1, sem_labels.unsqueeze(0).expand(self.n_queries, n_inst_gt).long()
+                )
 
                 final_cost = 1 * class_cost + 1 * dice_cost
-                
-            final_cost = final_cost.detach().cpu().numpy()
 
+            final_cost = final_cost.detach().cpu().numpy()
 
             row_inds, col_inds = linear_sum_assignment(final_cost)
 
-
             return row_inds, inst_masks[col_inds], sem_labels[col_inds]
 
+
 def build_matcher(args):
-    return HungarianMatcher(cost_class=args.set_cost_class,
-                            cost_bbox=args.set_cost_bbox,
-                            cost_giou=args.set_cost_giou)
+    return HungarianMatcher(cost_class=args.set_cost_class, cost_bbox=args.set_cost_bbox, cost_giou=args.set_cost_giou)

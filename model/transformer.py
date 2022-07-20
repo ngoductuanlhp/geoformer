@@ -1,11 +1,14 @@
 import math
+import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def attention(q, k, v,d_k, mask=None, dropout=None):
 
-    scores = torch.matmul(q, k.transpose(-2, -1)) /  math.sqrt(d_k)
+def attention(q, k, v, d_k, mask=None, dropout=None):
+
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
     if mask is not None:
         mask = mask.unsqueeze(1)
         scores = scores.masked_fill(mask == 0, -1e9)
@@ -16,6 +19,7 @@ def attention(q, k, v,d_k, mask=None, dropout=None):
 
     output = torch.matmul(scores, v)
     return output
+
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, heads, d_model, dropout=0.1):
@@ -31,8 +35,6 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.out = nn.Linear(d_model, d_model)
 
-
-
     def forward(self, q, k, v, mask=None):
 
         bs = q.size(0)
@@ -45,22 +47,22 @@ class MultiHeadAttention(nn.Module):
 
         # transpose to get dimensions bs * h * sl * d_model
 
-        k = k.transpose(1,2)
-        q = q.transpose(1,2)
-        v = v.transpose(1,2)
+        k = k.transpose(1, 2)
+        q = q.transpose(1, 2)
+        v = v.transpose(1, 2)
         # calculate attention using function we will define next
         scores = attention(q, k, v, self.d_k, mask, self.dropout)
 
         # concatenate heads and put through final linear layer
-        concat = scores.transpose(1,2).contiguous() \
-            .view(bs, -1, self.d_model)
+        concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
 
         output = self.out(concat)
 
         return output
 
+
 class Norm(nn.Module):
-    def __init__(self, d_model, eps = 1e-6):
+    def __init__(self, d_model, eps=1e-6):
         super().__init__()
 
         self.size = d_model
@@ -68,19 +70,20 @@ class Norm(nn.Module):
         self.alpha = nn.Parameter(torch.ones(self.size))
         self.bias = nn.Parameter(torch.zeros(self.size))
         self.eps = eps
+
     def forward(self, x):
-        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) \
-               / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
         return norm
 
 
 class FeedForward(nn.Module):
-    def __init__(self, d_model, d_ff=64, dropout = 0.1):
+    def __init__(self, d_model, d_ff=64, dropout=0.1):
         super().__init__()
         # We set d_ff as a default to 2048
         self.linear_1 = nn.Linear(d_model, d_ff)
         self.dropout = nn.Dropout(dropout)
         self.linear_2 = nn.Linear(d_ff, d_model)
+
     def forward(self, x):
         x = self.dropout(F.relu(self.linear_1(x)))
         x = self.linear_2(x)
@@ -99,11 +102,10 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, mask):
         x2 = self.norm_1(x)
-        x = x + self.dropout_1(self.attn_1(x2,x2,x2,mask))
+        x = x + self.dropout_1(self.attn_1(x2, x2, x2, mask))
         x2 = self.norm_2(x)
         x = x + self.dropout_2(self.ff(x2))
         return x
-
 
 
 class DecoderLayer(nn.Module):
@@ -125,16 +127,14 @@ class DecoderLayer(nn.Module):
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
         x2 = self.norm_2(x)
-        x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs,
-                                           src_mask))
+        x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, src_mask))
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
         return x
 
-import copy
+
 def get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
-
 
 
 class PositionalEncoder(nn.Module):
@@ -143,16 +143,11 @@ class PositionalEncoder(nn.Module):
         self.d_model = d_model
 
     def forward(self, xyz):
-        xyz1 = xyz.unsqueeze(1) ### N * 1 * 3
-        xyz2 = xyz.unsqueeze(0) ### 1 * N * 3
-        pairwise_dist =xyz1 - xyz2 ### N * N * 3
+        xyz1 = xyz.unsqueeze(1)  # N * 1 * 3
+        xyz2 = xyz.unsqueeze(0)  # 1 * N * 3
+        pairwise_dist = xyz1 - xyz2  # N * N * 3
 
         return pairwise_dist
-
-
-
-
-
 
 
 class TransformerEncoder(nn.Module):
@@ -172,16 +167,15 @@ class TransformerEncoder(nn.Module):
         assert features.size(1) == self.d_model
         output = torch.zeros_like(features)
         for i in range(batch_size):
-            batch_id = torch.nonzero((batch_ids==i)).squeeze(dim=1)
+            batch_id = torch.nonzero((batch_ids == i)).squeeze(dim=1)
             if batch_id.size(0) == 0:
                 continue
             start_id = int(batch_id.min().item())
-            end_id = int(batch_id.max().item())+1
-            batch_xyz = xyz[start_id:end_id].view(-1, 3) ###n' * 3
-            batch_features = features[start_id:end_id].view(-1, self.d_model) ### n' * c
+            end_id = int(batch_id.max().item()) + 1
+            batch_xyz = xyz[start_id:end_id].view(-1, 3)  # n' * 3
+            batch_features = features[start_id:end_id].view(-1, self.d_model)  # n' * c
 
-
-            pairwise_dist = self.pe(batch_xyz).float() ### n' * n' * 3
+            pairwise_dist = self.pe(batch_xyz).float()  # n' * n' * 3
             pairwise_dist = pairwise_dist.mean(dim=1)
             position_embedding = self.position_linear(pairwise_dist)
 
@@ -192,7 +186,3 @@ class TransformerEncoder(nn.Module):
             x = self.norm(x)
             output[batch_id] = x.squeeze(dim=0)
         return output
-
-
-
-

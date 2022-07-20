@@ -10,10 +10,13 @@ is implemented
 
 import math
 from typing import List
+
 import torch
 from torch.nn.modules.utils import _ntuple
 
+
 TORCH_VERSION = tuple(int(x) for x in torch.__version__.split(".")[:2])
+
 
 def cat(tensors: List[torch.Tensor], dim: int = 0):
     """
@@ -62,9 +65,7 @@ class Conv2d(torch.nn.Conv2d):
     def forward(self, x):
         if x.numel() == 0 and self.training:
             # https://github.com/pytorch/pytorch/issues/12013
-            assert not isinstance(
-                self.norm, torch.nn.SyncBatchNorm
-            ), "SyncBatchNorm does not support empty inputs!"
+            assert not isinstance(self.norm, torch.nn.SyncBatchNorm), "SyncBatchNorm does not support empty inputs!"
 
         if x.numel() == 0 and TORCH_VERSION <= (1, 4):
             assert not isinstance(
@@ -76,9 +77,7 @@ class Conv2d(torch.nn.Conv2d):
             # This computes the height and width of the output tensor
             output_shape = [
                 (i + 2 * p - (di * (k - 1) + 1)) // s + 1
-                for i, p, di, k, s in zip(
-                    x.shape[-2:], self.padding, self.dilation, self.kernel_size, self.stride
-                )
+                for i, p, di, k, s in zip(x.shape[-2:], self.padding, self.dilation, self.kernel_size, self.stride)
             ]
             output_shape = [x.shape[0], self.weight.shape[0]] + output_shape
             empty = _NewEmptyTensorOp.apply(x, output_shape)
@@ -119,9 +118,7 @@ class Conv1d(torch.nn.Conv1d):
     def forward(self, x):
         if x.numel() == 0 and self.training:
             # https://github.com/pytorch/pytorch/issues/12013
-            assert not isinstance(
-                self.norm, torch.nn.SyncBatchNorm
-            ), "SyncBatchNorm does not support empty inputs!"
+            assert not isinstance(self.norm, torch.nn.SyncBatchNorm), "SyncBatchNorm does not support empty inputs!"
 
         if x.numel() == 0 and TORCH_VERSION <= (1, 4):
             assert not isinstance(
@@ -133,9 +130,7 @@ class Conv1d(torch.nn.Conv1d):
             # This computes the height and width of the output tensor
             output_shape = [
                 (i + 2 * p - (di * (k - 1) + 1)) // s + 1
-                for i, p, di, k, s in zip(
-                    x.shape[-1:], self.padding, self.dilation, self.kernel_size, self.stride
-                )
+                for i, p, di, k, s in zip(x.shape[-1:], self.padding, self.dilation, self.kernel_size, self.stride)
             ]
             output_shape = [x.shape[0], self.weight.shape[0]] + output_shape
             empty = _NewEmptyTensorOp.apply(x, output_shape)
@@ -154,6 +149,7 @@ class Conv1d(torch.nn.Conv1d):
             x = self.activation(x)
         return x
 
+
 if TORCH_VERSION > (1, 4):
     BatchNorm1d = torch.nn.BatchNorm1d
 else:
@@ -169,7 +165,6 @@ else:
             # get output shape
             output_shape = x.shape
             return _NewEmptyTensorOp.apply(x, output_shape)
-
 
 
 if TORCH_VERSION > (1, 4):
@@ -257,20 +252,14 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
     A wrapper around :func:`torch.nn.functional.interpolate` to support zero-size tensor.
     """
     if TORCH_VERSION > (1, 4) or input.numel() > 0:
-        return torch.nn.functional.interpolate(
-            input, size, scale_factor, mode, align_corners=align_corners
-        )
+        return torch.nn.functional.interpolate(input, size, scale_factor, mode, align_corners=align_corners)
 
     def _check_size_scale_factor(dim):
         if size is None and scale_factor is None:
             raise ValueError("either size or scale_factor should be defined")
         if size is not None and scale_factor is not None:
             raise ValueError("only one of size or scale_factor should be defined")
-        if (
-                scale_factor is not None
-                and isinstance(scale_factor, tuple)
-                and len(scale_factor) != dim
-        ):
+        if scale_factor is not None and isinstance(scale_factor, tuple) and len(scale_factor) != dim:
             raise ValueError(
                 "scale_factor shape must match input shape. "
                 "Input is {}D, scale_factor size is {}".format(dim, len(scale_factor))

@@ -38,10 +38,11 @@ def setup_print_for_distributed(is_primary):
     This function disables printing when not in primary process
     """
     import builtins as __builtin__
+
     builtin_print = __builtin__.print
 
     def print(*args, **kwargs):
-        force = kwargs.pop('force', False)
+        force = kwargs.pop("force", False)
         if is_primary or force:
             builtin_print(*args, **kwargs)
 
@@ -54,11 +55,11 @@ def init_distributed(gpu_id, global_rank, world_size, dist_url, dist_backend):
         f"| distributed init (rank {global_rank}) (world {world_size}): {dist_url}",
         flush=True,
     )
-    '''
+    """
     torch.distributed.init_process_group(
             backend="nccl", init_method="tcp://localhost:54321"
     )
-    '''
+    """
     # torch.distributed.init_process_group(backend='nccl', init_method='env://')
     torch.distributed.init_process_group(
         backend=dist_backend,
@@ -66,7 +67,7 @@ def init_distributed(gpu_id, global_rank, world_size, dist_url, dist_backend):
         world_size=world_size,
         rank=global_rank,
     )
-    
+
     torch.distributed.barrier()
     setup_print_for_distributed(is_primary())
 
@@ -149,9 +150,7 @@ def all_gather_pickle(data, device):
     for _ in size_list:
         tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device=device))
     if local_size != max_size:
-        padding = torch.empty(
-            size=(max_size - local_size,), dtype=torch.uint8, device=device
-        )
+        padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device=device)
         tensor = torch.cat((tensor, padding), dim=0)
     dist.all_gather(tensor_list, tensor)
 
@@ -168,7 +167,7 @@ def all_gather_dict(data):
     Run all_gather on data which is a dictionary of Tensors
     """
     assert isinstance(data, dict)
-    
+
     gathered_dict = {}
     for item_key in data:
         if isinstance(data[item_key], torch.Tensor):
@@ -181,4 +180,3 @@ def all_gather_dict(data):
                 gathered_tensor = data[item_key]
             gathered_dict[item_key] = gathered_tensor
     return gathered_dict
-        

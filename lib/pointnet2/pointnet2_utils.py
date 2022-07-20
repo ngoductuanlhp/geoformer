@@ -1,22 +1,18 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 
-''' Modified based on: https://github.com/erikwijmans/Pointnet2_PyTorch '''
-from __future__ import (
-    division,
-    absolute_import,
-    with_statement,
-    print_function,
-    unicode_literals,
-)
+""" Modified based on: https://github.com/erikwijmans/Pointnet2_PyTorch """
+from __future__ import absolute_import, division, print_function, unicode_literals, with_statement
+
+
+import lib.pointnet2.pytorch_utils as pt_utils
 import torch
-from torch.autograd import Function
 import torch.nn as nn
-import pytorch_utils as pt_utils
-import sys
+from torch.autograd import Function
+
 
 try:
     import builtins
-except:
+except ImportError:
     import __builtin__ as builtins
 
 try:
@@ -28,10 +24,6 @@ except ImportError:
             "Please see the setup instructions in the README: "
             "https://github.com/erikwijmans/Pointnet2_PyTorch/blob/master/README.rst"
         )
-
-if False:
-    # Workaround for type hints without depending on the `typing` module
-    from typing import *
 
 
 class RandomDropout(nn.Module):
@@ -48,7 +40,6 @@ class RandomDropout(nn.Module):
 class FurthestPointSampling(Function):
     @staticmethod
     def forward(ctx, xyz, npoint):
-        # type: (Any, torch.Tensor, int) -> torch.Tensor
         r"""
         Uses iterative furthest point sampling to select a set of npoint features that have the largest
         minimum distance
@@ -80,7 +71,6 @@ furthest_point_sample = FurthestPointSampling.apply
 class GatherOperation(Function):
     @staticmethod
     def forward(ctx, features, idx):
-        # type: (Any, torch.Tensor, torch.Tensor) -> torch.Tensor
         r"""
 
         Parameters
@@ -117,7 +107,6 @@ gather_operation = GatherOperation.apply
 class ThreeNN(Function):
     @staticmethod
     def forward(ctx, unknown, known):
-        # type: (Any, torch.Tensor, torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]
         r"""
             Find the three nearest neighbors of unknown in known
         Parameters
@@ -149,7 +138,6 @@ three_nn = ThreeNN.apply
 class ThreeInterpolate(Function):
     @staticmethod
     def forward(ctx, features, idx, weight):
-        # type(Any, torch.Tensor, torch.Tensor, torch.Tensor) -> Torch.Tensor
         r"""
             Performs weight linear interpolation on 3 features
         Parameters
@@ -167,7 +155,6 @@ class ThreeInterpolate(Function):
             (B, c, n) tensor of the interpolated features
         """
         B, c, m = features.size()
-        n = idx.size(1)
 
         ctx.three_interpolate_for_backward = (idx, weight, m)
 
@@ -175,7 +162,6 @@ class ThreeInterpolate(Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        # type: (Any, torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         r"""
         Parameters
         ----------
@@ -193,9 +179,7 @@ class ThreeInterpolate(Function):
         """
         idx, weight, m = ctx.three_interpolate_for_backward
 
-        grad_features = _ext.three_interpolate_grad(
-            grad_out.contiguous(), idx, weight, m
-        )
+        grad_features = _ext.three_interpolate_grad(grad_out.contiguous(), idx, weight, m)
 
         return grad_features, None, None
 
@@ -206,7 +190,6 @@ three_interpolate = ThreeInterpolate.apply
 class GroupingOperation(Function):
     @staticmethod
     def forward(ctx, features, idx):
-        # type: (Any, torch.Tensor, torch.Tensor) -> torch.Tensor
         r"""
 
         Parameters
@@ -230,7 +213,6 @@ class GroupingOperation(Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        # type: (Any, torch.tensor) -> Tuple[torch.Tensor, torch.Tensor]
         r"""
 
         Parameters
@@ -257,7 +239,6 @@ grouping_operation = GroupingOperation.apply
 class BallQuery(Function):
     @staticmethod
     def forward(ctx, radius, nsample, xyz, new_xyz):
-        # type: (Any, float, int, torch.Tensor, torch.Tensor) -> torch.Tensor
         r"""
 
         Parameters
@@ -300,8 +281,16 @@ class QueryAndGroup(nn.Module):
         Maximum number of features to gather in the ball
     """
 
-    def __init__(self, radius, nsample, use_xyz=True, ret_grouped_xyz=False, normalize_xyz=False, sample_uniformly=False, ret_unique_cnt=False):
-        # type: (QueryAndGroup, float, int, bool) -> None
+    def __init__(
+        self,
+        radius,
+        nsample,
+        use_xyz=True,
+        ret_grouped_xyz=False,
+        normalize_xyz=False,
+        sample_uniformly=False,
+        ret_unique_cnt=False,
+    ):
         super(QueryAndGroup, self).__init__()
         self.radius, self.nsample, self.use_xyz = radius, nsample, use_xyz
         self.ret_grouped_xyz = ret_grouped_xyz
@@ -309,10 +298,9 @@ class QueryAndGroup(nn.Module):
         self.sample_uniformly = sample_uniformly
         self.ret_unique_cnt = ret_unique_cnt
         if self.ret_unique_cnt:
-            assert(self.sample_uniformly)
+            assert self.sample_uniformly
 
     def forward(self, xyz, new_xyz, features=None):
-        # type: (QueryAndGroup, torch.Tensor. torch.Tensor, torch.Tensor) -> Tuple[Torch.Tensor]
         r"""
         Parameters
         ----------
@@ -341,7 +329,6 @@ class QueryAndGroup(nn.Module):
                     all_ind = torch.cat((unique_ind, unique_ind[sample_ind]))
                     idx[i_batch, i_region, :] = all_ind
 
-
         xyz_trans = xyz.transpose(1, 2).contiguous()
         grouped_xyz = grouping_operation(xyz_trans, idx)  # (B, 3, npoint, nsample)
         grouped_xyz -= new_xyz.transpose(1, 2).unsqueeze(-1)
@@ -351,15 +338,11 @@ class QueryAndGroup(nn.Module):
         if features is not None:
             grouped_features = grouping_operation(features, idx)
             if self.use_xyz:
-                new_features = torch.cat(
-                    [grouped_xyz, grouped_features], dim=1
-                )  # (B, C + 3, npoint, nsample)
+                new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (B, C + 3, npoint, nsample)
             else:
                 new_features = grouped_features
         else:
-            assert (
-                self.use_xyz
-            ), "Cannot have not features and not use xyz as a feature!"
+            assert self.use_xyz, "Cannot have not features and not use xyz as a feature!"
             new_features = grouped_xyz
 
         ret = [new_features]
@@ -382,12 +365,10 @@ class GroupAll(nn.Module):
     """
 
     def __init__(self, use_xyz=True, ret_grouped_xyz=False):
-        # type: (GroupAll, bool) -> None
         super(GroupAll, self).__init__()
         self.use_xyz = use_xyz
 
     def forward(self, xyz, new_xyz, features=None):
-        # type: (GroupAll, torch.Tensor, torch.Tensor, torch.Tensor) -> Tuple[torch.Tensor]
         r"""
         Parameters
         ----------
@@ -408,9 +389,7 @@ class GroupAll(nn.Module):
         if features is not None:
             grouped_features = features.unsqueeze(2)
             if self.use_xyz:
-                new_features = torch.cat(
-                    [grouped_xyz, grouped_features], dim=1
-                )  # (B, 3 + C, 1, N)
+                new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (B, 3 + C, 1, N)
             else:
                 new_features = grouped_features
         else:

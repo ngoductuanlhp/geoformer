@@ -1,5 +1,6 @@
-
 import numpy as np
+
+
 def draw_line(xyz1, xyz2, num=1000):
     x1 = xyz1[0]
     x2 = xyz2[0]
@@ -14,6 +15,7 @@ def draw_line(xyz1, xyz2, num=1000):
     y_line = np.linspace(y1, y2, num).reshape([-1, 1])
     z_line = np.linspace(z1, z2, num).reshape([-1, 1])
     return np.concatenate([x_line, y_line, z_line], axis=-1)
+
 
 def draw_3d_box_pcds(center, lx, ly, lz, pointnum):
     """
@@ -50,7 +52,9 @@ def draw_3d_box_pcds(center, lx, ly, lz, pointnum):
     line10 = draw_line(pt2, pt6, pointnum)
     line11 = draw_line(pt3, pt7, pointnum)
 
-    return np.concatenate([line0, line1, line2, line3, line4, line5, line6, line7, line8, line9, line10, line11], axis=0)
+    return np.concatenate(
+        [line0, line1, line2, line3, line4, line5, line6, line7, line8, line9, line10, line11], axis=0
+    )
 
 
 def draw_3d_box_pcds2(center, lx1, lx2, ly1, ly2, lz1, lz2, pointnum):
@@ -63,35 +67,35 @@ def draw_3d_box_pcds2(center, lx1, lx2, ly1, ly2, lz1, lz2, pointnum):
     zmin = center[2] - lz1
     zmax = center[2] + lz2
 
-    center = [(xmin+xmax)/2.0, (ymin+ymax)/2.0, (zmin+zmax)/2.0]
-    return draw_3d_box_pcds(center=center, lx=lx1+lx2, ly=ly1+ly2, lz=lz1+lz2, pointnum=pointnum)
-
-
+    center = [(xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0]
+    return draw_3d_box_pcds(center=center, lx=lx1 + lx2, ly=ly1 + ly2, lz=lz1 + lz2, pointnum=pointnum)
 
 
 def write_ply_color(points, labels, out_filename, num_classes=None):
-    """ Color (N,3) points with labels (N) within range 0 ~ num_classes-1 as OBJ file """
+    """Color (N,3) points with labels (N) within range 0 ~ num_classes-1 as OBJ file"""
     import matplotlib.pyplot as pyplot
+
     labels = labels.astype(int)
     N = points.shape[0]
     if num_classes is None:
-        num_classes = np.max(labels)+1
+        num_classes = np.max(labels) + 1
     else:
-        assert(num_classes>np.max(labels))
-    fout = open(out_filename, 'w')
-    colors = [pyplot.cm.hsv(i/float(num_classes)) for i in range(num_classes)]
+        assert num_classes > np.max(labels)
+    fout = open(out_filename, "w")
+    colors = [pyplot.cm.hsv(i / float(num_classes)) for i in range(num_classes)]
     for i in range(N):
         c = colors[labels[i]]
-        c = [int(x*255) for x in c]
-        fout.write('v %f %f %f %d %d %d\n' % (points[i,0],points[i,1],points[i,2],c[0],c[1],c[2]))
+        c = [int(x * 255) for x in c]
+        fout.write("v %f %f %f %d %d %d\n" % (points[i, 0], points[i, 1], points[i, 2], c[0], c[1], c[2]))
     fout.close()
 
+
 def write_ply_rgb(points, colors, out_filename):
-    """ Color (N,3) points with RGB colors (N,3) within range [0,255] as OBJ file """
+    """Color (N,3) points with RGB colors (N,3) within range [0,255] as OBJ file"""
     colors = colors.astype(int)
     N = points.shape[0]
-    fout = open(out_filename, 'w')
+    fout = open(out_filename, "w")
     for i in range(N):
         c = colors[i, :]
-        fout.write('v %f %f %f %d %d %d\n' % (points[i, 0], points[i, 1], points[i, 2], c[0], c[1], c[2]))
+        fout.write("v %f %f %f %d %d %d\n" % (points[i, 0], points[i, 1], points[i, 2], c[0], c[1], c[2]))
     fout.close()

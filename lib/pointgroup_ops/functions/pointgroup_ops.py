@@ -1,17 +1,17 @@
-'''
+"""
 PointGroup operations
 Written by Li Jiang
-'''
+"""
 
+import PG_OP
 import torch
 from torch.autograd import Function
 
-import PG_OP
 
 class Voxelization_Idx(Function):
     @staticmethod
     def forward(ctx, coords, batchsize, mode=4):
-        '''
+        """
         :param ctx:
         :param coords:  long (N, dimension + 1) or (N, dimension) dimension = 3
         :param batchsize
@@ -20,7 +20,7 @@ class Voxelization_Idx(Function):
         :return: output_coords:  long (M, dimension + 1) (M <= N)
         :return: output_map: int M * (maxActive + 1)
         :return: input_map: int N
-        '''
+        """
         assert coords.is_contiguous()
         N = coords.size(0)
         output_coords = coords.new()
@@ -31,10 +31,10 @@ class Voxelization_Idx(Function):
         PG_OP.voxelize_idx(coords, output_coords, input_map, output_map, batchsize, mode)
         return output_coords, input_map, output_map
 
-
     @staticmethod
     def backward(ctx, a=None, b=None, c=None):
         return None
+
 
 voxelization_idx = Voxelization_Idx.apply
 
@@ -42,12 +42,12 @@ voxelization_idx = Voxelization_Idx.apply
 class Voxelization(Function):
     @staticmethod
     def forward(ctx, feats, map_rule, mode=4):
-        '''
+        """
         :param ctx:
         :param map_rule: cuda int M * (maxActive + 1)
         :param feats: cuda float N * C
         :return: output_feats: cuda float M * C
-        '''
+        """
         assert map_rule.is_contiguous()
         assert feats.is_contiguous()
         N, C = feats.size()
@@ -61,7 +61,6 @@ class Voxelization(Function):
         PG_OP.voxelize_fp(feats, output_feats, map_rule, mode, M, maxActive, C)
         return output_feats
 
-
     @staticmethod
     def backward(ctx, d_output_feats):
         map_rule, mode, maxActive, N = ctx.for_backwards
@@ -72,19 +71,20 @@ class Voxelization(Function):
         PG_OP.voxelize_bp(d_output_feats.contiguous(), d_feats, map_rule, mode, M, maxActive, C)
         return d_feats, None, None
 
+
 voxelization = Voxelization.apply
 
 
 class PointRecover(Function):
     @staticmethod
     def forward(ctx, feats, map_rule, nPoint):
-        '''
+        """
         :param ctx:
         :param feats: cuda float M * C
         :param map_rule: cuda int M * (maxActive + 1)
         :param nPoint: int
         :return: output_feats: cuda float N * C
-        '''
+        """
         assert map_rule.is_contiguous()
         assert feats.is_contiguous()
         M, C = feats.size()
@@ -109,13 +109,14 @@ class PointRecover(Function):
 
         return d_feats, None, None
 
+
 point_recover = PointRecover.apply
 
 
 class BallQueryBatchP(Function):
     @staticmethod
     def forward(ctx, coords, batch_idxs, batch_offsets, radius, meanActive):
-        '''
+        """
         :param ctx:
         :param coords: (n, 3) float
         :param batch_idxs: (n) int
@@ -124,7 +125,7 @@ class BallQueryBatchP(Function):
         :param meanActive: int
         :return: idx (nActive), int
         :return: start_len (n, 2), int
-        '''
+        """
 
         n = coords.size(0)
 
@@ -147,20 +148,21 @@ class BallQueryBatchP(Function):
     def backward(ctx, a=None, b=None):
         return None, None, None
 
+
 ballquery_batch_p = BallQueryBatchP.apply
 
 
 class BFSCluster(Function):
     @staticmethod
     def forward(ctx, semantic_label, ball_query_idxs, start_len, threshold):
-        '''
+        """
         :param ctx:
         :param semantic_label: (N), int
         :param ball_query_idxs: (nActive), int
         :param start_len: (N, 2), int
         :return: cluster_idxs:  int (sumNPoint, 2), dim 0 for cluster_id, dim 1 for corresponding point idxs in N
         :return: cluster_offsets: int (nCluster + 1)
-        '''
+        """
 
         N = start_len.size(0)
 
@@ -179,18 +181,19 @@ class BFSCluster(Function):
     def backward(ctx, a=None):
         return None
 
+
 bfs_cluster = BFSCluster.apply
 
 
 class RoiPool(Function):
     @staticmethod
     def forward(ctx, feats, proposals_offset):
-        '''
+        """
         :param ctx:
         :param feats: (sumNPoint, C) float
         :param proposals_offset: (nProposal + 1) int
         :return: output_feats (nProposal, C) float
-        '''
+        """
         nProposal = proposals_offset.size(0) - 1
         sumNPoint, C = feats.size()
 
@@ -218,20 +221,21 @@ class RoiPool(Function):
 
         return d_feats, None
 
+
 roipool = RoiPool.apply
 
 
 class GetIoU(Function):
     @staticmethod
     def forward(ctx, proposals_idx, proposals_offset, instance_labels, instance_pointnum):
-        '''
+        """
         :param ctx:
         :param proposals_idx: (sumNPoint), int
         :param proposals_offset: (nProposal + 1), int
         :param instance_labels: (N), long, 0~total_nInst-1, -100
         :param instance_pointnum: (total_nInst), int
         :return: proposals_iou: (nProposal, total_nInst), float
-        '''
+        """
         nInstance = instance_pointnum.size(0)
         nProposal = proposals_offset.size(0) - 1
 
@@ -242,7 +246,9 @@ class GetIoU(Function):
 
         proposals_iou = torch.cuda.FloatTensor(nProposal, nInstance).zero_()
 
-        PG_OP.get_iou(proposals_idx, proposals_offset, instance_labels, instance_pointnum, proposals_iou, nInstance, nProposal)
+        PG_OP.get_iou(
+            proposals_idx, proposals_offset, instance_labels, instance_pointnum, proposals_iou, nInstance, nProposal
+        )
 
         return proposals_iou
 
@@ -250,18 +256,19 @@ class GetIoU(Function):
     def backward(ctx, a=None):
         return None, None, None, None
 
+
 get_iou = GetIoU.apply
 
 
 class SecMean(Function):
     @staticmethod
     def forward(ctx, inp, offsets):
-        '''
+        """
         :param ctx:
         :param inp: (N, C) float
         :param offsets: (nProposal + 1) int
         :return: out (nProposal, C) float
-        '''
+        """
         nProposal = offsets.size(0) - 1
         C = inp.size(1)
 
@@ -278,18 +285,19 @@ class SecMean(Function):
     def backward(ctx, a=None):
         return None, None
 
+
 sec_mean = SecMean.apply
 
 
 class SecMin(Function):
     @staticmethod
     def forward(ctx, inp, offsets):
-        '''
+        """
         :param ctx:
         :param inp: (N, C) float
         :param offsets: (nProposal + 1) int
         :return: out (nProposal, C) float
-        '''
+        """
         nProposal = offsets.size(0) - 1
         C = inp.size(1)
 
@@ -306,18 +314,19 @@ class SecMin(Function):
     def backward(ctx, a=None):
         return None, None
 
+
 sec_min = SecMin.apply
 
 
 class SecMax(Function):
     @staticmethod
     def forward(ctx, inp, offsets):
-        '''
+        """
         :param ctx:
         :param inp: (N, C) float
         :param offsets: (nProposal + 1) int
         :return: out (nProposal, C) float
-        '''
+        """
         nProposal = offsets.size(0) - 1
         C = inp.size(1)
 
@@ -333,5 +342,6 @@ class SecMax(Function):
     @staticmethod
     def backward(ctx, a=None):
         return None, None
+
 
 sec_max = SecMax.apply

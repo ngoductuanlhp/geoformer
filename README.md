@@ -1,4 +1,5 @@
 # GeoFormer
+![overview](figs/arch.png)
 
 Code for the paper **Geodesic-Former: a Geodesic-Guided Few-shot 3D Point Cloud Instance Segmenter** (ECCV 2022).
 
@@ -13,16 +14,30 @@ Please refer to [installation guide](docs/INSTALL.md).
 ## Data Preparation
 Please refer to [data preparation](docs/DATA_PREPARATION.md).
 
-## Detailed Traing and Testing
+## Traing and Testing
 Please refer to [training guide](docs/TRAIN.md).
 
-## Quick inference
+## Quick demo
 
 We provided a quick inference on ScannetV2 dataset with our pretrained model ([GoogleDrive](https://drive.google.com/file/d/1HFr2F2YwtitbrblwtKknO5Vuo4xNswXG/view?usp=sharing))
 
 ```bash
 python test_fs.py --config config/test_geoformer_fs_scannet.yaml --output_path results/test --resume pretrains/best_fs_geoformer_scannet_fold0.pth
 ```
+
+## Citation
+If you find this work useful in your research, please cite:
+```
+@inproceedings{ngo2022geoformer,
+ author={Tuan Ngo and Khoi Nguyen},
+ booktitle={Proceedings of European Conference on Computer Vision (ECCV)},
+ title={Geodesic-Former: a Geodesic-Guided Few-shot 3D Point Cloud Instance Segmenter},
+ year= {2022}
+}
+```
+
 ## Acknowledgement
 This repo is built upon [DyCo3D](https://github.com/aim-uofa/DyCo3D), [spconv](https://github.com/traveller59/spconv), [3DETR](https://github.com/facebookresearch/3detr). 
 
+## Contact
+If you have any questions or suggestions about this repo, please feel free to contact me (v.tuannd42@vinai.io).

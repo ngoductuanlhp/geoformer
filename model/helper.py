@@ -1,7 +1,7 @@
-import torch.nn as nn
-from functools import partial
 import copy
 import torch
+import torch.nn as nn
+
 
 class BatchNormDim1Swap(nn.BatchNorm1d):
     """
@@ -22,6 +22,7 @@ class BatchNormDim1Swap(nn.BatchNorm1d):
         x = x.permute(2, 0, 1)
         return x
 
+
 NORM_DICT = {
     "bn": BatchNormDim1Swap,
     "bn1d": nn.BatchNorm1d,
@@ -37,6 +38,7 @@ ACTIVATION_DICT = {
 WEIGHT_INIT_DICT = {
     "xavier_uniform": nn.init.xavier_uniform_,
 }
+
 
 class GenericMLP(nn.Module):
     def __init__(
@@ -60,7 +62,9 @@ class GenericMLP(nn.Module):
         if norm_fn_name is not None:
             norm = NORM_DICT[norm_fn_name]
         if norm_fn_name == "ln" and use_conv:
-            norm = lambda x: nn.GroupNorm(1, x)  # easier way to use LayerNorm
+            def norm(x):
+                return nn.GroupNorm(1, x)
+            # norm = lambda x: nn.GroupNorm(1, x)  # easier way to use LayerNorm
 
         if dropout is not None:
             if not isinstance(dropout, list):
@@ -110,6 +114,7 @@ class GenericMLP(nn.Module):
 
 def get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+
 
 def unique_with_inds(x, dim=-1):
     unique, inverse = torch.unique(x, return_inverse=True, dim=dim)
