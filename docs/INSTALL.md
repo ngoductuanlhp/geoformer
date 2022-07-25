@@ -5,13 +5,21 @@
 * Pytorch 1.7.1
 * CUDA 10.2
 
-1\) Clone the repo.
+1\) Clone this repository
 
-2\) Install pytorch == 1.7.1 and cudatoolkit
+```
+git clone https://github.com/VinAIResearch/GeoFormer
+cd GeoFormer
+```
+
+2\) Install pytorch (version 1.7.1), cudatoolkit (version 10.2) and other dependencies
 ```
 conda install pytorch==1.7.1 cudatoolkit=10.2 -c pytorch
-pip install -r requirements.txt
+
 conda install -c bioconda google-sparsehash 
+
+pip install -r requirements.txt
+
 ```
 
 We do not recommend to use newer version of Pytorch due to the lack of THC library. 
@@ -62,10 +70,4 @@ python setup.py install
 
 ```
 conda install -c faiss-gpu cudatoolkit=10.2 # for CUDA 10.2
-```
-
-7\) Install other dependencies:
-
-```
-pip install -r requirements.txt
 ```

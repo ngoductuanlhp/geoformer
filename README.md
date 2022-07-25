@@ -12,7 +12,7 @@ This paper introduces a new problem in 3D point cloud: few-shot instance segment
 
 ![overview](figs/arch.png)
 
-Details of the model architecture and experimental results can be found in our following paper:
+Details of the model architecture and experimental results can be found in [our paper](http://arxiv.org/abs/2207.10859):
 
 ```bibtext
 @inproceedings{ngo2022geoformer,
